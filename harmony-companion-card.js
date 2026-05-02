@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.12.0 (go2rtc RTSP fix, Grab-Bild 500ms Auto-Refresh fuer TV-Hintergrund)
+// Version: 3.13.0 (Grab-Bild-Refresh konfigurierbar in Sekunden, Default 30s)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.12.0";
+const HC_VERSION = "3.13.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -98,8 +98,9 @@ class HarmonyCompanionCard extends HTMLElement {
         this._colorCache = {};
         this._fadeTimer = null;
         this._progressTimer = null;
-        this._grabRefreshTimer = null;  // Intervall-Timer fuer Grab-Bild-Polling (TV-Hintergrund)
-        this._grabRefreshBase = null;   // Grab-URL ohne Timestamp (Basis fuer den Timer)
+        this._grabRefreshTimer = null;    // Intervall-Timer fuer Grab-Bild-Polling (TV-Hintergrund)
+        this._grabRefreshBase = null;     // Grab-URL ohne Timestamp (Basis fuer den Timer)
+        this._grabRefreshInterval = null; // Aktives Intervall in ms (fuer Aenderungserkennung)
         this._tvData = null;
         this._tvGrabUrl = null;   // gecachte /grab-URL fuer TV-Hintergrund (Modus C)
         this._tvLastTitle = null; // letzter Titel fuer Programmwechsel-Erkennung (Modus C)
@@ -1440,17 +1441,22 @@ class HarmonyCompanionCard extends HTMLElement {
     }
 
     // -------- GRAB-IMAGE REFRESH (TV-Hintergrund Polling) --------
-    // Aktualisiert das TV-Hintergrundbild alle 500 ms via /grab-Endpoint.
-    // Der Endpoint liefert immer das aktuelle TV-Bild (JPEG-Screenshot).
+    // Aktualisiert das TV-Hintergrundbild periodisch via /grab-Endpoint.
+    // Intervall konfigurierbar via epg_grab_interval (Sekunden, Default: 30).
     // Durch Cache-Busting (_t=Timestamp) laedt der Browser jeweils ein neues Bild.
-    // Ergebnis: ~2 FPS "Pseudo-Video" als Hintergrundbild der Karte.
+    // Hinweis: Das Bild in der Python-Integration ("TV"-Entity) wird separat
+    //          von HA via stream_source / async_camera_image geladen (~500ms).
     _startGrabRefresh(baseUrl) {
+        // Intervall aus Konfiguration lesen (Sekunden → Millisekunden, Default 30s)
+        const intervalMs = Math.max(5, (this.config.epg_grab_interval || 30)) * 1000;
         // Timestamp-Parameter aus vorherigem Aufruf entfernen (saubere Basis-URL)
         const cleanUrl = baseUrl.replace(/([&?])_t=\d+/, '');
-        // Timer nur neu starten wenn andere URL oder noch kein Timer laeuft
-        if (this._grabRefreshBase === cleanUrl && this._grabRefreshTimer) return;
+        // Timer nur neu starten wenn andere URL / anderes Intervall oder kein Timer laeuft
+        if (this._grabRefreshBase === cleanUrl && this._grabRefreshTimer &&
+            this._grabRefreshInterval === intervalMs) return;
         this._stopGrabRefresh();
-        this._grabRefreshBase = cleanUrl;
+        this._grabRefreshBase     = cleanUrl;
+        this._grabRefreshInterval = intervalMs;
         const sep = cleanUrl.includes('?') ? '&' : '?';
         this._grabRefreshTimer = setInterval(() => {
             const bgEl = this.shadowRoot && this.shadowRoot.getElementById('display-bg');
@@ -1460,7 +1466,7 @@ class HarmonyCompanionCard extends HTMLElement {
             // (kein Flackern), wechselt erst wenn neues Bild vollstaendig geladen ist.
             bgEl.style.backgroundImage = 'url(' + newUrl + ')';
             bgEl.dataset.src = newUrl;
-        }, 500);
+        }, intervalMs);
     }
 
     _stopGrabRefresh() {
