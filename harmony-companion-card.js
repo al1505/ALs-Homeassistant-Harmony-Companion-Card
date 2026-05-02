@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.10.9 (Umbenennung: ALs Harmony Companion Card)
+// Version: 3.11.0 (Camera-Stream, activity_camera, Drei-Punkte oeffnet Live-Video)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.10.9";
+const HC_VERSION = "3.11.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -538,11 +538,13 @@ class HarmonyCompanionCard extends HTMLElement {
         const pwrBtn = this.shadowRoot.getElementById('display-power');
         if (pwrBtn) pwrBtn.onclick = (e) => { e.stopPropagation(); this._executeAction('off'); };
 
-        // Drei-Punkte-Menue: oeffnet HA More-Info des Media-Players
+        // Drei-Punkte-Menue: oeffnet Camera-Entity (Live-Stream) wenn konfiguriert, sonst Media-Player
         const dotsBtn = this.shadowRoot.getElementById('display-dots');
         if (dotsBtn) dotsBtn.onclick = (e) => {
             e.stopPropagation();
-            const eid = (this.config.activity_media && this.config.activity_media[this._lastActivity]) || null;
+            const camEid   = (this.config.activity_camera && this.config.activity_camera[this._lastActivity]) || null;
+            const mediaEid = (this.config.activity_media  && this.config.activity_media[this._lastActivity])  || null;
+            const eid = camEid || mediaEid;
             if (!eid) return;
             this.dispatchEvent(new CustomEvent('hass-more-info', {
                 bubbles: true, composed: true, detail: { entityId: eid }
@@ -1881,15 +1883,24 @@ class HarmonyCompanionEditor extends HTMLElement {
 
         body.appendChild(ctxRow);
 
-        // Media-Entity fuer diese Aktivitaet (nur bei nicht-globalem Kontext)
+        // Media-Entity + Camera-Entity fuer diese Aktivitaet (nur bei nicht-globalem Kontext)
         if (this._currentContext !== 'global') {
-            const mediaEntityId = (this._config.activity_media && this._config.activity_media[this._currentContext]) || '';
+            const mediaEntityId  = (this._config.activity_media  && this._config.activity_media[this._currentContext])  || '';
+            const cameraEntityId = (this._config.activity_camera && this._config.activity_camera[this._currentContext]) || '';
             body.appendChild(this._labeled(
                 'Media-Entity fuer diese Aktivitaet (optional)',
                 this._haSelector(
                     { entity: { domain: 'media_player' } },
                     mediaEntityId,
                     (v) => this._patchActivityMedia(this._currentContext, v || '')
+                )
+            ));
+            body.appendChild(this._labeled(
+                'Camera-Entity fuer Live-Stream (Drei-Punkte-Button)',
+                this._haSelector(
+                    { entity: { domain: 'camera' } },
+                    cameraEntityId,
+                    (v) => this._patchActivityCamera(this._currentContext, v || '')
                 )
             ));
         }
@@ -2173,6 +2184,16 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!entityId) delete next.activity_media[actName];
         else next.activity_media[actName] = entityId;
         if (Object.keys(next.activity_media).length === 0) delete next.activity_media;
+        this._config = next;
+        this._dispatch();
+    }
+
+    _patchActivityCamera(actName, entityId) {
+        const next = JSON.parse(JSON.stringify(this._config));
+        if (!next.activity_camera) next.activity_camera = {};
+        if (!entityId) delete next.activity_camera[actName];
+        else next.activity_camera[actName] = entityId;
+        if (Object.keys(next.activity_camera).length === 0) delete next.activity_camera;
         this._config = next;
         this._dispatch();
     }
