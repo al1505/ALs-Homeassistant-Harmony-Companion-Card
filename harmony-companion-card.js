@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.11.0 (Camera-Stream, activity_camera, Drei-Punkte oeffnet Live-Video)
+// Version: 3.12.0 (go2rtc RTSP fix, Grab-Bild 500ms Auto-Refresh fuer TV-Hintergrund)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.11.0";
+const HC_VERSION = "3.12.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -98,6 +98,8 @@ class HarmonyCompanionCard extends HTMLElement {
         this._colorCache = {};
         this._fadeTimer = null;
         this._progressTimer = null;
+        this._grabRefreshTimer = null;  // Intervall-Timer fuer Grab-Bild-Polling (TV-Hintergrund)
+        this._grabRefreshBase = null;   // Grab-URL ohne Timestamp (Basis fuer den Timer)
         this._tvData = null;
         this._tvGrabUrl = null;   // gecachte /grab-URL fuer TV-Hintergrund (Modus C)
         this._tvLastTitle = null; // letzter Titel fuer Programmwechsel-Erkennung (Modus C)
@@ -1240,6 +1242,13 @@ class HarmonyCompanionCard extends HTMLElement {
                     bgEl.classList.add('animate');
                 }
             }
+            // Grab-Bild alle 500 ms neu laden (TV-Hintergrund "Pseudo-Video")
+            // Nur bei TV-Modus mit Grab-URL starten; bei Kodi/anderen stoppen.
+            if (isTVAct && thumb && thumb.includes('/grab')) {
+                this._startGrabRefresh(thumb);
+            } else {
+                this._stopGrabRefresh();
+            }
             const bgC  = (colors && colors.bg)      || FALLBACK_BG;
             const txtC = (colors && colors.text)    || FALLBACK_TEXT;
             const subC = (colors && colors.subText) || FALLBACK_TEXT;
@@ -1251,6 +1260,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 bgEl.classList.remove('animate');
                 bgEl.dataset.src = '';
             }
+            this._stopGrabRefresh();
             if (gradEl) gradEl.style.background = '';
             applyColors(FALLBACK_BG, FALLBACK_TEXT, FALLBACK_TEXT);
         } else {
@@ -1261,6 +1271,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 bgEl.classList.remove('animate');
                 bgEl.dataset.src = '';
             }
+            this._stopGrabRefresh();
             if (gradEl) gradEl.style.background = '';
             display.classList.remove('tv-mode');
             this._stopProgressTimer();
@@ -1428,9 +1439,42 @@ class HarmonyCompanionCard extends HTMLElement {
         }
     }
 
+    // -------- GRAB-IMAGE REFRESH (TV-Hintergrund Polling) --------
+    // Aktualisiert das TV-Hintergrundbild alle 500 ms via /grab-Endpoint.
+    // Der Endpoint liefert immer das aktuelle TV-Bild (JPEG-Screenshot).
+    // Durch Cache-Busting (_t=Timestamp) laedt der Browser jeweils ein neues Bild.
+    // Ergebnis: ~2 FPS "Pseudo-Video" als Hintergrundbild der Karte.
+    _startGrabRefresh(baseUrl) {
+        // Timestamp-Parameter aus vorherigem Aufruf entfernen (saubere Basis-URL)
+        const cleanUrl = baseUrl.replace(/([&?])_t=\d+/, '');
+        // Timer nur neu starten wenn andere URL oder noch kein Timer laeuft
+        if (this._grabRefreshBase === cleanUrl && this._grabRefreshTimer) return;
+        this._stopGrabRefresh();
+        this._grabRefreshBase = cleanUrl;
+        const sep = cleanUrl.includes('?') ? '&' : '?';
+        this._grabRefreshTimer = setInterval(() => {
+            const bgEl = this.shadowRoot && this.shadowRoot.getElementById('display-bg');
+            if (!bgEl || bgEl.style.display === 'none') return;
+            const newUrl = cleanUrl + sep + '_t=' + Date.now();
+            // backgroundImage direkt setzen – Browser zeigt altes Bild waehrend des Ladens
+            // (kein Flackern), wechselt erst wenn neues Bild vollstaendig geladen ist.
+            bgEl.style.backgroundImage = 'url(' + newUrl + ')';
+            bgEl.dataset.src = newUrl;
+        }, 500);
+    }
+
+    _stopGrabRefresh() {
+        if (this._grabRefreshTimer) {
+            clearInterval(this._grabRefreshTimer);
+            this._grabRefreshTimer = null;
+        }
+        this._grabRefreshBase = null;
+    }
+
     disconnectedCallback() {
         if (this._fadeTimer)    { clearTimeout(this._fadeTimer);      this._fadeTimer    = null; }
         if (this._progressTimer){ clearInterval(this._progressTimer); this._progressTimer = null; }
+        this._stopGrabRefresh();
     }
 }
 
