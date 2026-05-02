@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.13.0 (Grab-Bild-Refresh konfigurierbar in Sekunden, Default 30s)
+// Version: 3.14.0 (6 Display-Layouts, GUI-Editor, Auto-Derive enigma2_url, Channel-Change-Fix)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.13.0";
+const HC_VERSION = "3.14.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -403,6 +403,69 @@ class HarmonyCompanionCard extends HTMLElement {
                 }
                 #display-progress-fill { height: 100%; width: 0%; background: rgba(255,255,255,0.85); transition: width 0.8s linear; }
                 .display-error { color: #cc0000; font-size: 13px; }
+                /* ============================================================
+                   DISPLAY LAYOUTS (data-layout="1".."6")
+                   Steuern Position von Logo, Power-Button und Zeitanzeige.
+                   Default (kein Attribut) = Layout 1 (kompakt).
+                   ============================================================ */
+
+                /* Layout 2 + 3: Gestapelt, Logo oben-links klein, Power oben */
+                #harmony-display[data-layout="2"],
+                #harmony-display[data-layout="3"] { padding: 8px 48px 28px 64px; min-height: 120px !important; }
+                #harmony-display[data-layout="2"] #display-logo,
+                #harmony-display[data-layout="3"] #display-logo {
+                    left: 8px; top: 28px; transform: none; width: 44px; height: 44px;
+                }
+                #harmony-display[data-layout="2"] #display-power,
+                #harmony-display[data-layout="3"] #display-power {
+                    top: 6px; transform: none; bottom: auto;
+                }
+                /* Layout 2: Zeit unten-links */
+                #harmony-display[data-layout="2"] #display-time {
+                    position: absolute; bottom: 8px; left: 64px;
+                    right: auto; text-align: left; margin-top: 0;
+                }
+                /* Layout 3: Zeit unten-rechts */
+                #harmony-display[data-layout="3"] #display-time {
+                    position: absolute; bottom: 8px; right: 8px;
+                    left: auto; text-align: right; margin-top: 0;
+                }
+
+                /* Layout 4 + 5: Logo mittig-links gross, Text daneben */
+                #harmony-display[data-layout="4"].tv-mode,
+                #harmony-display[data-layout="5"].tv-mode { padding-left: 90px; }
+                #harmony-display[data-layout="4"] #display-logo,
+                #harmony-display[data-layout="5"] #display-logo {
+                    left: 8px; top: 50%; transform: translateY(-50%); width: 70px; height: 70px;
+                }
+                #harmony-display[data-layout="4"] #display-power,
+                #harmony-display[data-layout="5"] #display-power {
+                    top: 6px; transform: none; bottom: auto;
+                }
+                /* Layout 4: Zeit inline (unter Titel) */
+                #harmony-display[data-layout="4"] #display-time {
+                    position: relative; text-align: left; margin-top: 4px;
+                }
+                /* Layout 5: Zeit unten-rechts */
+                #harmony-display[data-layout="5"] #display-time {
+                    position: absolute; bottom: 8px; right: 8px;
+                    left: auto; text-align: right; margin-top: 0;
+                }
+
+                /* Layout 6: Schmaler Logo-Streifen, volle Text-Breite */
+                #harmony-display[data-layout="6"].tv-mode { padding-left: 100px; }
+                #harmony-display[data-layout="6"] #display-logo {
+                    left: 46px; top: 6px; bottom: 6px; width: 42px;
+                    height: auto; transform: none;
+                    background-size: contain;
+                }
+                #harmony-display[data-layout="6"] #display-power {
+                    top: 6px; transform: none; bottom: auto;
+                }
+                #harmony-display[data-layout="6"] #display-time {
+                    position: absolute; bottom: 8px; right: 8px;
+                    left: auto; text-align: right; margin-top: 0;
+                }
                 .match-zone {
                     min-height: 38px; min-width: 38px;
                     display: flex; align-items: center; justify-content: center;
@@ -1009,6 +1072,9 @@ class HarmonyCompanionCard extends HTMLElement {
         const isTVMode  = isTVAct && !!this._tvData;
         const tvData    = isTVMode ? this._tvData : null;
         const enigma2B  = (this.config.enigma2_url || '').replace(/\/+$/, '');
+        // Layout-Klasse (1-6, Default 1)
+        const layout = String(this.config.display_layout || '1');
+        if (display) display.dataset.layout = layout;
 
         // HA-Entity-Attribute (immer verfuegbar wenn activity_media gesetzt)
         const haAttrs   = (mediaStateObj && mediaStateObj.attributes) ? mediaStateObj.attributes : null;
@@ -1125,11 +1191,21 @@ class HarmonyCompanionCard extends HTMLElement {
             if (timeEl)  timeEl.style.display  = 'none';
         }
 
-        // Power-Button-Position: Idle zentriert, Playing unten-links
+        // Power-Button-Position:
+        // Layout 1: Idle=zentriert, Playing=unten-links
+        // Layout 2-6: immer oben-links (wird per CSS gesteuert; inline-Reset)
         if (pwrEl) {
-            pwrEl.style.top       = isPlaying ? '' : '50%';
-            pwrEl.style.bottom    = isPlaying ? '12px' : '';
-            pwrEl.style.transform = isPlaying ? '' : 'translateY(-50%)';
+            const useTopLayout = ['2','3','4','5','6'].includes(layout);
+            if (useTopLayout) {
+                // CSS uebernimmt Positionierung (top:6px), Inline-Stile zuruecksetzen
+                pwrEl.style.top       = '';
+                pwrEl.style.bottom    = '';
+                pwrEl.style.transform = '';
+            } else {
+                pwrEl.style.top       = isPlaying ? '' : '50%';
+                pwrEl.style.bottom    = isPlaying ? '12px' : '';
+                pwrEl.style.transform = isPlaying ? '' : 'translateY(-50%)';
+            }
         }
 
         // Drei-Punkte (nur wenn Media-Entity konfiguriert)
@@ -1154,6 +1230,13 @@ class HarmonyCompanionCard extends HTMLElement {
                 timeEl.textContent   = '';
                 timeEl.style.display = 'none';
             }
+            // Inline-Positionierung zuruecksetzen → CSS-Layout uebernimmt
+            timeEl.style.position  = '';
+            timeEl.style.bottom    = '';
+            timeEl.style.right     = '';
+            timeEl.style.left      = '';
+            timeEl.style.textAlign = '';
+            timeEl.style.marginTop = '';
         }
 
         // ---- Fortschrittsbalken ----
@@ -1320,20 +1403,33 @@ class HarmonyCompanionCard extends HTMLElement {
                 }
                 const ss = this._hass.states[enigma2Eid];
                 if (ss) {
-                    const sa         = ss.attributes || {};
-                    const newBegin   = sa.currservice_begin || '';
-                    const prevBegin  = this._tvData ? this._tvData.beginStr : null;
-                    const progChange = (prevBegin !== newBegin);
-                    const oldThumb   = this._tvData ? this._tvData.thumbUrl : null;
-                    // grab_url und picon_url kommen jetzt direkt vom Sensor
-                    const grabBase   = sa.grab_url || (enigma2Base ? enigma2Base + '/grab?format=jpg&r=480&mode=video' : null);
+                    const sa           = ss.attributes || {};
+                    const newBegin     = sa.currservice_begin || '';
+                    const newStation   = sa.currservice_station || '';
+                    const newServiceref = sa.currservice_serviceref || '';
+                    const prevBegin    = this._tvData ? this._tvData.beginStr    : null;
+                    const prevStation  = this._tvData ? this._tvData.station     : null;
+                    const prevSvcRef   = this._tvData ? this._tvData.serviceref  : null;
+                    // Kanal ODER Programm gewechselt → neues Grab-Bild laden
+                    const progChange = (prevBegin !== newBegin)
+                        || (prevStation  !== null && prevStation  !== newStation)
+                        || (prevSvcRef   !== null && prevSvcRef   !== newServiceref);
+                    const oldThumb = this._tvData ? this._tvData.thumbUrl : null;
+                    // grab_url direkt vom Sensor (bereits vollstaendige URL inkl. Host)
+                    // Fallback: enigma2_url aus Sensor-Attribut (kein manuelles Eintragen noetig)
+                    const sensorBase = (sa.enigma2_url || '').replace(/\/+$/, '');
+                    const effectiveBase = enigma2Base || sensorBase;
+                    const grabBase = sa.grab_url
+                        || (effectiveBase ? effectiveBase + '/grab?format=jpg&r=480&mode=video' : null);
                     this._tvData = {
-                        channel:  sa.currservice_station || ss.state || '',
-                        title:    sa.currservice_name    || '',
-                        beginStr: newBegin,
-                        endStr:   sa.currservice_end     || '',
-                        piconUrl: sa.picon_url           || null,
-                        thumbUrl: grabBase
+                        channel:    newStation || ss.state || '',
+                        title:      sa.currservice_name || '',
+                        beginStr:   newBegin,
+                        endStr:     sa.currservice_end  || '',
+                        piconUrl:   sa.picon_url        || null,
+                        station:    newStation,
+                        serviceref: newServiceref,
+                        thumbUrl:   grabBase
                             ? (progChange ? grabBase + '&_t=' + Date.now() : oldThumb)
                             : null
                     };
@@ -1711,6 +1807,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             }
             root.appendChild(this._sectionHub());
             root.appendChild(this._sectionEnigma2());
+            root.appendChild(this._sectionLayout());
             root.appendChild(this._sectionSlots('act', 'Aktivitaeten-Slots (Hauptbereich)'));
             root.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));
             root.appendChild(this._sectionButtons());
@@ -1757,6 +1854,148 @@ class HarmonyCompanionEditor extends HTMLElement {
         return det;
     }
 
+    // -------- SECTION: DISPLAY LAYOUT --------
+    _sectionLayout() {
+        const { det, body } = this._details('sec-layout', 'Display-Layout');
+
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size:12px; color:var(--secondary-text-color); margin-bottom:12px; line-height:1.5;';
+        info.textContent = 'Waehle, wie Kanal, Titel, Logo und Restzeit im Display angeordnet werden.';
+        body.appendChild(info);
+
+        const current = String(this._config.display_layout || '1');
+
+        // SVG-Miniatur-Vorschau pro Layout
+        const layouts = [
+            { id: '1', label: 'Kompakt (Logo + Text + Hintergrund)',   svg: this._layoutSvg1() },
+            { id: '2', label: 'Gestapelt – Zeit unten links',           svg: this._layoutSvg2() },
+            { id: '3', label: 'Gestapelt – Zeit unten rechts',          svg: this._layoutSvg3() },
+            { id: '4', label: 'Logo + Info – Zeit inline',              svg: this._layoutSvg4() },
+            { id: '5', label: 'Logo + Info – Zeit unten rechts',        svg: this._layoutSvg5() },
+            { id: '6', label: 'Schmales Logo – voller Text',            svg: this._layoutSvg6() },
+        ];
+
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:10px;';
+
+        layouts.forEach(l => {
+            const card = document.createElement('div');
+            const isActive = (current === l.id);
+            card.style.cssText = [
+                'border:2px solid', isActive ? 'var(--primary-color,#03a9f4)' : 'var(--divider-color,#e0e0e0)',
+                '; border-radius:8px; padding:8px; cursor:pointer; transition:border-color 0.2s;',
+                'background:', isActive ? 'var(--primary-color-light, rgba(3,169,244,0.08))' : 'transparent',
+            ].join(' ');
+            card.innerHTML = l.svg + '<div style="font-size:11px; margin-top:4px; text-align:center; line-height:1.3;">' + escHtml(l.label) + '</div>';
+            card.onclick = () => {
+                this._patchTop('display_layout', l.id);
+                this._buildDOM();
+            };
+            grid.appendChild(card);
+        });
+        body.appendChild(grid);
+        return det;
+    }
+
+    // SVG-Miniaturvorschauen fuer jedes Layout (80x44 px)
+    // Farben: dunkelgrau=Hintergrund, hellgrau=Text, blau=Logo, orange=Zeit
+    _layoutSvgBase(content) {
+        return '<svg viewBox="0 0 80 44" width="100%" style="display:block; border-radius:4px; background:#2a2a2a;">' + content + '</svg>';
+    }
+    _layoutSvg1() {
+        // Kompakt: Logo links, Text mittig, Background rechts
+        return this._layoutSvgBase(
+            // background
+            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.7"/>' +
+            // power btn
+            '<circle cx="6" cy="22" r="4" fill="#555"/>' +
+            // logo
+            '<rect x="12" y="14" width="16" height="16" rx="2" fill="#3a6a9a"/>' +
+            // activity
+            '<rect x="32" y="8" width="20" height="3" rx="1" fill="#888"/>' +
+            // channel
+            '<rect x="32" y="15" width="24" height="5" rx="1" fill="#ccc"/>' +
+            // title
+            '<rect x="32" y="24" width="18" height="3" rx="1" fill="#888"/>' +
+            // time
+            '<rect x="32" y="31" width="12" height="3" rx="1" fill="#e07020"/>'
+        );
+    }
+    _layoutSvg2() {
+        // Gestapelt, Zeit unten-links
+        return this._layoutSvgBase(
+            '<rect x="30" y="0" width="50" height="44" fill="#1a3a2a" opacity="0.5"/>' +
+            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
+            // activity top
+            '<rect x="14" y="4" width="22" height="3" rx="1" fill="#888"/>' +
+            // logo small top-left
+            '<rect x="6" y="12" width="14" height="14" rx="2" fill="#3a6a9a"/>' +
+            // channel
+            '<rect x="6" y="30" width="30" height="5" rx="1" fill="#ccc"/>' +
+            // title
+            '<rect x="6" y="38" width="22" height="3" rx="1" fill="#888"/>' +
+            // time bottom-left
+            '<rect x="6" y="38" width="16" height="3" rx="1" fill="#e07020"/>'
+        );
+    }
+    _layoutSvg3() {
+        // Gestapelt, Zeit unten-rechts
+        return this._layoutSvgBase(
+            '<rect x="30" y="0" width="50" height="44" fill="#1a3a2a" opacity="0.5"/>' +
+            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
+            '<rect x="14" y="4" width="22" height="3" rx="1" fill="#888"/>' +
+            '<rect x="6" y="12" width="14" height="14" rx="2" fill="#3a6a9a"/>' +
+            '<rect x="6" y="30" width="30" height="5" rx="1" fill="#ccc"/>' +
+            '<rect x="6" y="38" width="22" height="3" rx="1" fill="#888"/>' +
+            // time bottom-RIGHT
+            '<rect x="56" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
+        );
+    }
+    _layoutSvg4() {
+        // Logo mittig-links gross, Text daneben, Zeit inline
+        return this._layoutSvgBase(
+            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.5"/>' +
+            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
+            // logo big left-center
+            '<rect x="6" y="10" width="22" height="24" rx="2" fill="#3a6a9a"/>' +
+            // channel
+            '<rect x="32" y="12" width="24" height="5" rx="1" fill="#ccc"/>' +
+            // title
+            '<rect x="32" y="21" width="18" height="3" rx="1" fill="#888"/>' +
+            // time inline below title
+            '<rect x="32" y="28" width="14" height="3" rx="1" fill="#e07020"/>'
+        );
+    }
+    _layoutSvg5() {
+        // Logo mittig-links gross, Zeit unten-rechts
+        return this._layoutSvgBase(
+            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.5"/>' +
+            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
+            '<rect x="6" y="10" width="22" height="24" rx="2" fill="#3a6a9a"/>' +
+            '<rect x="32" y="12" width="24" height="5" rx="1" fill="#ccc"/>' +
+            '<rect x="32" y="21" width="18" height="3" rx="1" fill="#888"/>' +
+            // time bottom-right
+            '<rect x="56" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
+        );
+    }
+    _layoutSvg6() {
+        // Schmaler Logo-Streifen, volle Text-Breite
+        return this._layoutSvgBase(
+            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.5"/>' +
+            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
+            // narrow logo strip
+            '<rect x="14" y="4" width="10" height="36" rx="2" fill="#3a6a9a"/>' +
+            // activity
+            '<rect x="28" y="6" width="20" height="3" rx="1" fill="#888"/>' +
+            // channel
+            '<rect x="28" y="13" width="28" height="5" rx="1" fill="#ccc"/>' +
+            // title
+            '<rect x="28" y="22" width="22" height="3" rx="1" fill="#888"/>' +
+            // time bottom-right
+            '<rect x="54" y="35" width="20" height="3" rx="1" fill="#e07020"/>'
+        );
+    }
+
     // -------- SECTION: ENIGMA2 / OPENWEBIF --------
     _sectionEnigma2() {
         const { det, body } = this._details('sec-enigma2', 'TV-Receiver (OpenWebIF / Enigma2)');
@@ -1780,13 +2019,32 @@ class HarmonyCompanionEditor extends HTMLElement {
 
         // URL-Feld (fuer Grab-Bild + optionaler Direkt-Fetch)
         const urlField = document.createElement('ha-textfield');
-        urlField.label = 'OpenWebIF URL (fuer Livebild / Direkt-Fetch)';
-        urlField.helper = 'z.B. http://192.168.1.100  –  Livebild (/grab) funktioniert ohne CORS';
+        urlField.label = 'OpenWebIF URL (optional – wird aus Sensor abgeleitet wenn leer)';
+        urlField.helper = 'z.B. http://192.168.1.100  –  Leer lassen wenn enigma2_entity gesetzt ist';
         urlField.helperPersistent = true;
         urlField.style.cssText = 'width:100%; margin-top:8px; display:block;';
         urlField.value = this._config.enigma2_url || '';
         urlField.onchange = (e) => this._patchTop('enigma2_url', e.target.value.trim() || undefined);
         body.appendChild(urlField);
+
+        // Grab-Bild Aktualisierungsintervall
+        const grabIntRow = document.createElement('div');
+        grabIntRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
+        const grabIntField = document.createElement('ha-textfield');
+        grabIntField.type    = 'number';
+        grabIntField.label   = 'Hintergrundbild Refresh (Sekunden)';
+        grabIntField.helper  = 'Wie oft das Grab-Bild in der Karte aktualisiert wird (min. 5, Default 30)';
+        grabIntField.helperPersistent = true;
+        grabIntField.min     = '5';
+        grabIntField.step    = '5';
+        grabIntField.style.cssText = 'flex:1;';
+        grabIntField.value   = String(this._config.epg_grab_interval || 30);
+        grabIntField.onchange = (e) => {
+            const v = Math.max(5, parseInt(e.target.value, 10) || 30);
+            this._patchTop('epg_grab_interval', v);
+        };
+        grabIntRow.appendChild(grabIntField);
+        body.appendChild(grabIntRow);
 
         // Aktivitaeten-Auswahl: Checkboxen fuer jede konfigurierte Aktivitaet
         const acts = this._allActivityNames();
