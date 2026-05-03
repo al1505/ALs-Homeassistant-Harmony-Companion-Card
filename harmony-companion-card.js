@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.2.0 (Zeit-Format auf "+109m", neues Element "Beg-End" (00:10 - 01:36) als
-//                  zweites Zeitfeld in dunklerem Gelb)
+// Version: 4.3.0 (Logo M (50x33) hinzugefuegt, neue Default-Groessen, Bottom/Right-Anchoring
+//                  entfernt — kein Sprung beim Verschieben ueber Display-Mitte mehr)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.2.0";
+const HC_VERSION = "4.3.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -36,30 +36,32 @@ const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
 // Höhen = tatsächliche Render-Höhe (font-size × 1.2 line-height), kein line-height-Trick
 // Logos im Querformat (Picons sind typisch breiter als hoch)
 const HC_ELEM_CATALOG = {
-    power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
-    logo_xl:  { label: 'Logo XL',  w: 50,  h: 50, color: '#1a3a99', fg: '#fff' },  // Picon Quadrat groß
-    logo_l:   { label: 'Logo L',   w: 48,  h: 35, color: '#2255aa', fg: '#fff' },  // Picon Querformat
-    logo_s:   { label: 'Logo S',   w: 40,  h: 28, color: '#3366bb', fg: '#fff' },  // Picon Querformat klein
-    activity: { label: 'Activity', w: 140, h: 13, color: '#dd7700', fg: '#fff' },  // orange, 11px×1.2
-    channel:  { label: 'Sender',   w: 140, h: 19, color: '#1a6633', fg: '#fff' },  // 16px×1.2
-    title:    { label: 'Titel',    w: 200, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px×1.2
-    time:     { label: 'Zeit',     w: 50,  h: 13, color: '#e8cc00', fg: '#111' },  // helles Gelb, "+109m"
-    timespan: { label: 'Beg-End',  w: 70,  h: 13, color: '#b8a000', fg: '#fff' },  // dunkleres Gelb, "00:10 - 01:36"
+    power:    { label: 'Power',    w: 25,  h: 24, color: '#b52929', fg: '#fff' },
+    logo_xl:  { label: 'Logo XL',  w: 70,  h: 48, color: '#1a3a99', fg: '#fff' },  // Picon groß
+    logo_l:   { label: 'Logo L',   w: 60,  h: 36, color: '#2255aa', fg: '#fff' },
+    logo_m:   { label: 'Logo M',   w: 50,  h: 33, color: '#3366bb', fg: '#fff' },  // Picon mittel (neu)
+    logo_s:   { label: 'Logo S',   w: 35,  h: 27, color: '#4477cc', fg: '#fff' },
+    activity: { label: 'Activity', w: 65,  h: 12, color: '#dd7700', fg: '#fff' },  // orange
+    channel:  { label: 'Sender',   w: 140, h: 15, color: '#1a6633', fg: '#fff' },
+    title:    { label: 'Titel',    w: 200, h: 12, color: '#7a1f5a', fg: '#fff' },
+    time:     { label: 'Zeit',     w: 35,  h: 9,  color: '#e8cc00', fg: '#111' },  // helles Gelb, "+109m"
+    timespan: { label: 'Beg-End',  w: 65,  h: 9,  color: '#b8a000', fg: '#fff' },  // dunkleres Gelb
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
 const HC_MODE_ELEMS = {
-    tv:    ['power', 'logo_xl', 'logo_l', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
+    tv:    ['power', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
     media: ['power', 'activity', 'title', 'time', 'timespan'],
 };
 
-// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_xl/logo_l/logo_s je h)
+// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → xl/l/m/s je h)
 function hcCatalogFor(layoutKey, def) {
     if (layoutKey === 'logo') {
         const h = (def && def.h) || 0;
-        if (h >= 45) return HC_ELEM_CATALOG.logo_xl;
-        if (h >= 32) return HC_ELEM_CATALOG.logo_l;
-        return HC_ELEM_CATALOG.logo_s;
+        if (h >= 42) return HC_ELEM_CATALOG.logo_xl;   // h≥42 (XL hat 48)
+        if (h >= 35) return HC_ELEM_CATALOG.logo_l;    // 35–41 (L hat 36)
+        if (h >= 30) return HC_ELEM_CATALOG.logo_m;    // 30–34 (M hat 33)
+        return HC_ELEM_CATALOG.logo_s;                  // <30 (S hat 27)
     }
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
@@ -72,24 +74,24 @@ function hcCatalogFor(layoutKey, def) {
 // Zeit ganz unten: top:113 = HC_DISP_H - h = direkt am Display-Boden.
 function hcDefaultLayout(mode) {
     if (mode === 'tv') return {
-        power:    { left: 0,   top: 49,  w: 30,  h: 28, visible: true },  // zentriert
-        logo:     { left: 40,  top: 45,  w: 48,  h: 35, visible: true },  // zentriert (126-35)/2
-        activity: { left: 95,  top: 3,   w: 140, h: 13, visible: true },  // oben rechts
-        channel:  { left: 95,  top: 21,  w: 140, h: 19, visible: true },  // darunter
-        title:    { left: 95,  top: 93,  w: 200, h: 17, visible: true },  // über Zeit
-        // Zeit unten-rechts (50×13 für "+109m"), Timespan links davon (70×13 für "00:10 - 01:36")
-        time:     { left: 270, top: 113, w: 50,  h: 13, visible: true },
-        timespan: { left: 195, top: 113, w: 70,  h: 13, visible: true },
+        power:    { left: 0,   top: 51,  w: 25,  h: 24, visible: true },  // zentriert (126-24)/2
+        logo:     { left: 30,  top: 45,  w: 60,  h: 36, visible: true },  // Logo L, zentriert (126-36)/2
+        activity: { left: 95,  top: 3,   w: 65,  h: 12, visible: true },
+        channel:  { left: 95,  top: 18,  w: 140, h: 15, visible: true },
+        title:    { left: 95,  top: 96,  w: 200, h: 12, visible: true },  // über Zeit/Beg-End
+        // Zeit unten-rechts (50×13 für "+109m"), Beg-End links davon (70×13)
+        time:     { left: 285, top: 117, w: 35,  h: 9,  visible: true },  // ganz unten-rechts
+        timespan: { left: 215, top: 117, w: 65,  h: 9,  visible: true },  // links davon
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
-        power:    { left: 0,   top: 49,  w: 30,  h: 28, visible: true },
+        power:    { left: 0,   top: 51,  w: 25,  h: 24, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
-        activity: { left: 40,  top: 3,   w: 275, h: 13, visible: true },
-        title:    { left: 0,   top: 93,  w: 315, h: 17, visible: true },
-        time:     { left: 270, top: 113, w: 50,  h: 13, visible: true },
-        timespan: { left: 195, top: 113, w: 70,  h: 13, visible: true },
+        activity: { left: 35,  top: 3,   w: 65,  h: 12, visible: true },
+        title:    { left: 0,   top: 96,  w: 315, h: 12, visible: true },
+        time:     { left: 285, top: 117, w: 35,  h: 9,  visible: true },  // ganz unten-rechts
+        timespan: { left: 215, top: 117, w: 65,  h: 9,  visible: true },  // links davon
     };
 }
 
@@ -1642,29 +1644,16 @@ class HarmonyCompanionCard extends HTMLElement {
             const isIcon = (key === 'logo' || key === 'power');
             const w = def.w || 30;
             const h = def.h || 14;
-            // Anker bestimmen: Element-Mittelpunkt im rechten/unteren Bereich? → von rechts/unten ankern
+            // KEIN Anker-Wechsel mehr: immer top/left → keine Sprünge beim Verschieben.
+            // Element-Mittelpunkt nur für Text-Ausrichtungs-Logik (rechtsbündig wenn rechts platziert).
             const cx = (def.left || 0) + w / 2;
-            const cy = (def.top  || 0) + h / 2;
-            const anchorRight  = cx > HC_DISP_W * 0.55;
-            const anchorBottom = cy > HC_DISP_H * 0.55;
+            const inRightArea = cx > HC_DISP_W * 0.5;
 
             el.style.position  = 'absolute';
-            // Horizontal-Anker
-            if (anchorRight) {
-                el.style.left  = 'auto';
-                el.style.right = (HC_DISP_W - (def.left || 0) - w) + 'px';
-            } else {
-                el.style.left  = (def.left || 0) + 'px';
-                el.style.right = 'auto';
-            }
-            // Vertikal-Anker
-            if (anchorBottom) {
-                el.style.top    = 'auto';
-                el.style.bottom = (HC_DISP_H - (def.top || 0) - h) + 'px';
-            } else {
-                el.style.top    = (def.top || 0) + 'px';
-                el.style.bottom = 'auto';
-            }
+            el.style.left      = (def.left || 0) + 'px';
+            el.style.top       = (def.top  || 0) + 'px';
+            el.style.right     = 'auto';
+            el.style.bottom    = 'auto';
             el.style.transform = 'none';
             el.style.margin    = '0';
             el.style.zIndex    = '3';
@@ -1679,9 +1668,9 @@ class HarmonyCompanionCard extends HTMLElement {
             }
             if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
             if (key === 'time' || key === 'timespan') {
-                el.style.textAlign    = anchorRight ? 'right' : 'left';
-                el.style.paddingRight = anchorRight ? '5px'   : '0';
-                el.style.paddingLeft  = anchorRight ? '0'     : '5px';
+                el.style.textAlign    = inRightArea ? 'right' : 'left';
+                el.style.paddingRight = inRightArea ? '5px'   : '0';
+                el.style.paddingLeft  = inRightArea ? '0'     : '5px';
             }
         });
     }
@@ -2158,9 +2147,10 @@ class HarmonyCompanionEditor extends HTMLElement {
             const placed = layout[lKey];
             const isPlaced = placed && placed.visible &&
                 (lKey !== 'logo' || (
-                    catalogKey === 'logo_xl' ? placed.h >= 45
-                    : catalogKey === 'logo_l' ? (placed.h >= 32 && placed.h < 45)
-                    : placed.h < 32
+                    catalogKey === 'logo_xl' ? placed.h >= 42
+                    : catalogKey === 'logo_l' ? (placed.h >= 35 && placed.h < 42)
+                    : catalogKey === 'logo_m' ? (placed.h >= 30 && placed.h < 35)
+                    : placed.h < 30
                 ));
             const item = document.createElement('div');
             const isIconPal = (catalogKey === 'power' || catalogKey.startsWith('logo'));
@@ -2207,7 +2197,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
         const catalogKey = key === 'logo'
-            ? (h >= 45 ? 'logo_xl' : h >= 32 ? 'logo_l' : 'logo_s')
+            ? (h >= 42 ? 'logo_xl' : h >= 35 ? 'logo_l' : h >= 30 ? 'logo_m' : 'logo_s')
             : key;
         // Label als separates Kind, damit Resize-Handle nicht überschrieben wird
         const labelEl = document.createElement('div');
