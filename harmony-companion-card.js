@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.3.1 (Auto-Save im Editor: alle Aenderungen werden sofort gespeichert,
-//                  "Uebernehmen"-Button entfernt, "Zuruecksetzen" speichert auch sofort)
+// Version: 4.4.0 (Display +20px Offset: 320×126 → 340×147 (Editor + Live-Card),
+//                  Uebernehmen-Button zurueck (Auto-Save entfernt))
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.3.1";
+const HC_VERSION = "4.4.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -26,11 +26,13 @@ const escHtml = (str) => {
 };
 
 // ── Layout-Editor: Raster-Konstanten ─────────────────────────────────────────
-const HC_GRID_COLS = 64, HC_COL_W = 5;    // 64 Spalten à 5 px = 320 px
-const HC_GRID_ROWS = 42, HC_ROW_H = 3;    // 42 Zeilen  à  3 px = 126 px
-const HC_PBAR_H    = 4;                   // Progress-Bar Höhe (px) — kein Snap in diesen Bereich
-const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 320 px
-const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
+// +20px Offset gegenüber der minimal sichtbaren Display-Zone (320×126) damit
+// Elemente am rechten und unteren Rand auch tatsächlich am sichtbaren Rand erscheinen.
+const HC_GRID_COLS = 68, HC_COL_W = 5;    // 68 Spalten à 5 px = 340 px
+const HC_GRID_ROWS = 49, HC_ROW_H = 3;    // 49 Zeilen  à  3 px = 147 px
+const HC_PBAR_H    = 4;                   // Progress-Bar Höhe (px)
+const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 340 px
+const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 147 px
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
 // Höhen = tatsächliche Render-Höhe (font-size × 1.2 line-height), kein line-height-Trick
@@ -73,25 +75,27 @@ function hcCatalogFor(layoutKey, def) {
 //                    Mit text-align:right + padding-right:5px endet Text bei x=315.
 // Zeit ganz unten: top:113 = HC_DISP_H - h = direkt am Display-Boden.
 function hcDefaultLayout(mode) {
+    // Display 340×147 px (mit +20px Offset gegenüber 320×126)
     if (mode === 'tv') return {
-        power:    { left: 0,   top: 51,  w: 25,  h: 24, visible: true },  // zentriert (126-24)/2
-        logo:     { left: 30,  top: 45,  w: 60,  h: 36, visible: true },  // Logo L, zentriert (126-36)/2
+        power:    { left: 0,   top: 60,  w: 25,  h: 24, visible: true },  // zentriert (147-24)/2≈61
+        logo:     { left: 30,  top: 54,  w: 60,  h: 36, visible: true },  // Logo L, (147-36)/2≈55
         activity: { left: 95,  top: 3,   w: 65,  h: 12, visible: true },
         channel:  { left: 95,  top: 18,  w: 140, h: 15, visible: true },
-        title:    { left: 95,  top: 96,  w: 200, h: 12, visible: true },  // über Zeit/Beg-End
-        // Zeit unten-rechts (50×13 für "+109m"), Beg-End links davon (70×13)
-        time:     { left: 285, top: 117, w: 35,  h: 9,  visible: true },  // ganz unten-rechts
-        timespan: { left: 215, top: 117, w: 65,  h: 9,  visible: true },  // links davon
+        title:    { left: 95,  top: 117, w: 200, h: 12, visible: true },  // über Zeit/Beg-End
+        // Zeit unten-rechts: left+w = 305+35 = 340 (Display-Rand)
+        time:     { left: 305, top: 138, w: 35,  h: 9,  visible: true },
+        // Beg-End links neben Zeit (5px Abstand): 305-5-65 = 235
+        timespan: { left: 235, top: 138, w: 65,  h: 9,  visible: true },
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
-        power:    { left: 0,   top: 51,  w: 25,  h: 24, visible: true },
+        power:    { left: 0,   top: 60,  w: 25,  h: 24, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
         activity: { left: 35,  top: 3,   w: 65,  h: 12, visible: true },
-        title:    { left: 0,   top: 96,  w: 315, h: 12, visible: true },
-        time:     { left: 285, top: 117, w: 35,  h: 9,  visible: true },  // ganz unten-rechts
-        timespan: { left: 215, top: 117, w: 65,  h: 9,  visible: true },  // links davon
+        title:    { left: 0,   top: 117, w: 335, h: 12, visible: true },
+        time:     { left: 305, top: 138, w: 35,  h: 9,  visible: true },
+        timespan: { left: 235, top: 138, w: 65,  h: 9,  visible: true },
     };
 }
 
@@ -411,8 +415,9 @@ class HarmonyCompanionCard extends HTMLElement {
                     transition: opacity 0.3s ease, height 0.3s ease;
                     padding: 10px 48px 14px 52px; box-sizing: border-box; overflow: hidden; position: relative;
                 }
-                /* TV-Modus: alle Elemente absolut positioniert → kein Padding noetig */
-                .display-zone.tv-mode { padding: 0; height: 126px !important; }
+                /* TV-Modus: alle Elemente absolut positioniert → kein Padding noetig.
+                   Höhe 147px (statt 126) damit Elemente am unteren Rand wirklich am sichtbaren Rand sind. */
+                .display-zone.tv-mode { padding: 0; height: 147px !important; }
                 #display-bg {
                     position: absolute; inset: 0; z-index: 0;
                     background-size: cover; background-position: center center;
@@ -2060,22 +2065,27 @@ class HarmonyCompanionEditor extends HTMLElement {
         actRow.style.cssText = 'display:flex;gap:8px;';
 
         const btnReset = document.createElement('button');
-        btnReset.textContent = 'Auf Standard zurücksetzen';
+        btnReset.textContent = 'Zurücksetzen';
         btnReset.style.cssText = 'padding:6px 12px;border-radius:6px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;background:transparent;color:inherit;';
         btnReset.onclick = () => {
             this._leLayouts[mode] = hcDefaultLayout(mode);
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
-            this._leSaveLayout(mode);  // Auto-save
         };
 
+        const btnApply = document.createElement('button');
+        btnApply.textContent = 'Übernehmen';
+        btnApply.style.cssText = 'padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--primary-color,#03a9f4);color:#fff;';
+        btnApply.onclick = () => this._leSaveLayout(mode);
+
         actRow.appendChild(btnReset);
+        actRow.appendChild(btnApply);
         body.appendChild(actRow);
 
-        // Auto-Save-Hinweis
+        // Hinweis
         const hint = document.createElement('div');
         hint.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:8px;font-style:italic;';
-        hint.textContent = 'Änderungen werden automatisch gespeichert.';
+        hint.textContent = 'Änderungen erst durch "Übernehmen" speichern.';
         body.appendChild(hint);
 
         return det;
@@ -2293,7 +2303,6 @@ class HarmonyCompanionEditor extends HTMLElement {
             this._leLayouts[mode] = layout;
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
-            this._leSaveLayout(mode);  // Auto-save
             if (this._leCoordTip) this._leCoordTip.textContent = '';
         };
         document.addEventListener('pointermove', onMove);
@@ -2388,7 +2397,6 @@ class HarmonyCompanionEditor extends HTMLElement {
         this._leLayouts[mode] = layout;
         this._leRenderGridEls(mode);
         this._leRenderPaletteItems(mode, this._lePaletteEl);
-        this._leSaveLayout(mode);  // Auto-save
     }
 
     // -------- SECTION: ENIGMA2 / OPENWEBIF --------
