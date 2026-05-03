@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.6.0 (Panel-Element: dunkler Hintergrund mit Farbe/Alpha/Eckradius einstellbar,
-//                  liegt hinter Icons/Texten (z-index:2). Frei platzierbar und resizable.)
+// Version: 4.6.1 (Bugfix: _leDrop ueberschrieb beim Verschieben Custom-Eigenschaften
+//                  (bgColor, bgAlpha, radius, etc.). Jetzt bleiben sie erhalten.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.6.0";
+const HC_VERSION = "4.6.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2593,7 +2593,9 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (inGrid) {
             const left = Math.max(0, Math.min(dispW - w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
             const top  = Math.max(0, Math.min(dispH - h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
-            layout[layoutKey] = { left, top, w, h, visible: true };
+            // Bestehende Custom-Eigenschaften (bgColor, bgAlpha, radius, etc.) erhalten
+            const prev = layout[layoutKey] || {};
+            layout[layoutKey] = { ...prev, left, top, w, h, visible: true };
         } else {
             delete layout[layoutKey];
         }
