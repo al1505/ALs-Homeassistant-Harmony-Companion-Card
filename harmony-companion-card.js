@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.20.0 (Layouts 1-6 exakt aus Excel, Layout 6 ohne Sender, line-height gesetzt)
+// Version: 3.20.1 (bottom:0 fuer letzte Zeile, Zeit+Uhr Suffix, transition height fix)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.20.0";
+const HC_VERSION = "3.20.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -337,7 +337,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     border-radius: 8px; min-height: 60px;
                     display: flex; flex-direction: column; justify-content: center;
                     color: #333; font-family: inherit;
-                    transition: opacity 0.3s ease, min-height 0.3s ease;
+                    transition: opacity 0.3s ease, height 0.3s ease;
                     padding: 10px 48px 14px 52px; box-sizing: border-box; overflow: hidden; position: relative;
                 }
                 /* TV-Modus: alle Elemente absolut positioniert → kein Padding noetig */
@@ -468,7 +468,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 80px; top: 84px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; top: 112px; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
                 /* Layout 4: Power+Fernsehen oben, Logo links (60x56), Sender/Titel/Zeit rechts */
@@ -489,7 +489,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 70px; top: 70px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-time {
-                    position: absolute; left: 0; top: 112px; width: 120px; line-height: 14px; text-align: left; margin: 0;
+                    position: absolute; left: 0; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: left; margin: 0;
                 }
 
                 /* Layout 5: Power+Fernsehen oben, Logo links (70x70), Sender/Titel rechts, Zeit unten-rechts */
@@ -510,7 +510,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 80px; top: 77px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; top: 112px; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
                 /* Layout 6: kein Sender; Power+Fernsehen oben, Logo links, Titel+Zeit unten */
@@ -528,10 +528,10 @@ class HarmonyCompanionCard extends HTMLElement {
                     display: none !important;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-title {
-                    position: absolute; left: 0; top: 112px; width: 200px; line-height: 14px; margin: 0;
+                    position: absolute; left: 0; bottom: 0; top: auto; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; top: 112px; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
                 .match-zone {
                     min-height: 38px; min-width: 38px;
@@ -1068,7 +1068,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     // Endet "morgen" (z.B. Sendung ueber Mitternacht)
                     if (endDt.getTime() <= now.getTime() - 60000) endDt.setDate(endDt.getDate() + 1);
                     const remSec = Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
-                    return fmtDur(remSec) + ' bis ' + fmtClock(eh, em);
+                    return fmtDur(remSec) + ' bis ' + fmtClock(eh, em) + ' Uhr';
                 }
             }
         }
@@ -1079,7 +1079,7 @@ class HarmonyCompanionCard extends HTMLElement {
             const endTs  = haAttrs.currservice_end_timestamp * 1000;
             const remSec = Math.max(0, (endTs - Date.now()) / 1000);
             const endDt  = new Date(endTs);
-            return fmtDur(remSec) + ' bis ' + fmtClock(endDt.getHours(), endDt.getMinutes());
+            return fmtDur(remSec) + ' bis ' + fmtClock(endDt.getHours(), endDt.getMinutes()) + ' Uhr';
         }
 
         // 3) Enigma2 HH:MM-Strings als Fallback (currservice_end im HA-Entity)
@@ -1093,7 +1093,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     endDt.setHours(eh, em, 0, 0);
                     if (endDt.getTime() <= now.getTime() - 60000) endDt.setDate(endDt.getDate() + 1);
                     const remSec = Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
-                    return fmtDur(remSec) + ' bis ' + fmtClock(eh, em);
+                    return fmtDur(remSec) + ' bis ' + fmtClock(eh, em) + ' Uhr';
                 }
             }
         }
@@ -1109,7 +1109,7 @@ class HarmonyCompanionCard extends HTMLElement {
             const pos     = Math.min(dur, posBase + elapsed);
             const remSec  = Math.max(0, dur - pos);
             const endDt   = new Date(Date.now() + remSec * 1000);
-            return fmtDur(remSec) + ' bis ' + fmtClock(endDt.getHours(), endDt.getMinutes());
+            return fmtDur(remSec) + ' bis ' + fmtClock(endDt.getHours(), endDt.getMinutes()) + ' Uhr';
         }
 
         return '';
