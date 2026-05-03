@@ -2,7 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.5.1 (Default-Offset Breite 40 → 50 (Effektiv 370×147 px))
+// Version: 4.6.0 (Panel-Element: dunkler Hintergrund mit Farbe/Alpha/Eckradius einstellbar,
+//                  liegt hinter Icons/Texten (z-index:2). Frei platzierbar und resizable.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.5.1";
+const HC_VERSION = "4.6.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -51,12 +52,14 @@ const HC_ELEM_CATALOG = {
     title:    { label: 'Titel',    w: 200, h: 15, color: '#7a1f5a', fg: '#fff' },
     time:     { label: 'Zeit',     w: 35,  h: 9,  color: '#e8cc00', fg: '#111' },  // helles Gelb, "+109m"
     timespan: { label: 'Beg-End',  w: 65,  h: 9,  color: '#b8a000', fg: '#fff' },  // dunkleres Gelb
+    // Panel: Hintergrund-Element (frei platzierbar, abgerundete Ecken, Farbe + Alpha einstellbar)
+    panel:    { label: 'Panel',    w: 20,  h: 20, color: '#404040', fg: '#fff' },
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
 const HC_MODE_ELEMS = {
-    tv:    ['power', 'menu', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
-    media: ['power', 'menu', 'activity', 'title', 'time', 'timespan'],
+    tv:    ['power', 'menu', 'panel', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
+    media: ['power', 'menu', 'panel', 'activity', 'title', 'time', 'timespan'],
 };
 
 // Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → xl/l/m/s je h)
@@ -74,6 +77,17 @@ function hcCatalogFor(layoutKey, def) {
 // Standard-Layouts für v4 (absolute Positionierung, 126px Display-Höhe)
 // Logo L: 48×35px (Querformat-Picon). Textspalte beginnt bei left:95 (40+48+7).
 // Elementbreiten: Activity/Sender 140px, Titel/Zeit 120px.
+// Hex → rgba()-String mit Alpha für Panel-Hintergrund
+function hcPanelBg(def) {
+    const hex = (def && def.bgColor) || '#404040';
+    const a   = (def && def.bgAlpha != null) ? Math.max(0, Math.min(1, def.bgAlpha)) : 0.5;
+    const m   = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    const r = m ? parseInt(m[1],16) : 64;
+    const g = m ? parseInt(m[2],16) : 64;
+    const b = m ? parseInt(m[3],16) : 64;
+    return `rgba(${r},${g},${b},${a})`;
+}
+
 // Default-Layout (alle Positionen relativ zu dispW/dispH).
 // Zeit unten-rechts: dispW-35 .. dispW (Box-Rechtsende = Display-Rand).
 function hcDefaultLayout(mode, dispW, dispH) {
@@ -92,6 +106,7 @@ function hcDefaultLayout(mode, dispW, dispH) {
     if (mode === 'tv') return {
         power:    { left: 0,     top: yMid24, w: 25,  h: 24, visible: true },
         menu:     { left: xMenu, top: 0,      w: 25,  h: 24, visible: true },  // Burger oben-rechts
+        panel:    { visible: false },                                          // optional, vom Nutzer
         logo:     { left: 30,    top: yMid36, w: 60,  h: 36, visible: true },  // Logo L
         activity: { left: 95,    top: 3,      w: 80,  h: 9,  visible: true },
         channel:  { left: 95,    top: 15,     w: 160, h: 18, visible: true },
@@ -103,6 +118,7 @@ function hcDefaultLayout(mode, dispW, dispH) {
     return {
         power:    { left: 0,     top: yMid24,    w: 25,  h: 24, visible: true },
         menu:     { left: xMenu, top: 0,         w: 25,  h: 24, visible: true },
+        panel:    { visible: false },
         logo:     { visible: false },
         channel:  { visible: false },
         activity: { left: 35,    top: 3,         w: 80,  h: 9,  visible: true },
@@ -462,6 +478,11 @@ class HarmonyCompanionCard extends HTMLElement {
                 #display-gradient {
                     position: absolute; inset: 0; z-index: 1; pointer-events: none;
                 }
+                #display-panel {
+                    position: absolute; z-index: 2; pointer-events: none;
+                    border-radius: 8px;
+                    background: rgba(40,40,40,0.5);
+                }
                 #display-power {
                     position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
                     z-index: 3; width: 36px; height: 36px; border-radius: 50%;
@@ -572,6 +593,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 <div class="display-zone" id="harmony-display">
                     <div id="display-bg"></div>
                     <div id="display-gradient"></div>
+                    <div id="display-panel" style="display:none;"></div>
                     <div id="display-power">
                         <svg class="svg-icon" viewBox="0 0 24 24"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>
                     </div>
@@ -1643,7 +1665,7 @@ class HarmonyCompanionCard extends HTMLElement {
     _clearDisplayLayout(display) {
         const props = ['position','left','top','right','bottom','transform',
                        'width','height','lineHeight','margin','zIndex','overflow'];
-        ['display-power','display-dots','display-logo','display-activity',
+        ['display-power','display-dots','display-logo','display-panel','display-activity',
          'display-channel','display-title','display-time','display-timespan'].forEach(id => {
             const el = display.querySelector('#' + id);
             if (!el) return;
@@ -1665,6 +1687,7 @@ class HarmonyCompanionCard extends HTMLElement {
 
         const idMap = {
             power: 'display-power', menu: 'display-dots', logo: 'display-logo',
+            panel: 'display-panel',
             activity: 'display-activity', channel: 'display-channel',
             title: 'display-title', time: 'display-time', timespan: 'display-timespan',
         };
@@ -1672,7 +1695,8 @@ class HarmonyCompanionCard extends HTMLElement {
             const el = display.querySelector('#' + (idMap[key] || ''));
             if (!el) return;
             if (def.visible === false) { el.style.display = 'none'; return; }
-            const isIcon = (key === 'logo' || key === 'power' || key === 'menu');
+            const isIcon  = (key === 'logo' || key === 'power' || key === 'menu');
+            const isPanel = (key === 'panel');
             const w = def.w || 30;
             const h = def.h || 14;
             // KEIN Anker-Wechsel mehr: immer top/left → keine Sprünge beim Verschieben.
@@ -1687,10 +1711,18 @@ class HarmonyCompanionCard extends HTMLElement {
             el.style.bottom    = 'auto';
             el.style.transform = 'none';
             el.style.margin    = '0';
-            el.style.zIndex    = '3';
+            el.style.zIndex    = isPanel ? '2' : '3';   // Panel hinter Icons/Texten
             el.style.width     = w + 'px';
             el.style.overflow  = 'hidden';
-            if (isIcon) {
+            if (isPanel) {
+                // Panel: Hintergrundfarbe + Alpha + Border-Radius aus def-Eigenschaften
+                el.style.height       = h + 'px';
+                el.style.lineHeight   = '';
+                el.style.background   = hcPanelBg(def);
+                el.style.borderRadius = ((def.radius != null) ? def.radius : 8) + 'px';
+                el.style.display      = (def.visible === false) ? 'none' : 'block';
+                el.style.pointerEvents = 'none';
+            } else if (isIcon) {
                 el.style.height     = h + 'px';
                 el.style.lineHeight = '';
             } else {
@@ -2131,6 +2163,13 @@ class HarmonyCompanionEditor extends HTMLElement {
         this._leRenderPaletteItems(mode, palette);
         body.appendChild(palette);
 
+        // Panel-Eigenschaften (nur sichtbar wenn Panel im Layout)
+        const panelBox = document.createElement('div');
+        panelBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        this._lePanelBox = panelBox;
+        this._leRenderPanelControls(mode);
+        body.appendChild(panelBox);
+
         // Aktions-Buttons
         const actRow = document.createElement('div');
         actRow.style.cssText = 'display:flex;gap:8px;';
@@ -2160,6 +2199,91 @@ class HarmonyCompanionEditor extends HTMLElement {
         body.appendChild(hint);
 
         return det;
+    }
+
+    // Panel-Eigenschaften (Farbe, Alpha, Border-Radius) – wird gerendert wenn Panel platziert ist
+    _leRenderPanelControls(mode) {
+        const box = this._lePanelBox;
+        if (!box) return;
+        box.innerHTML = '';
+        const layout = this._leLayouts[mode] || {};
+        const panel  = layout.panel;
+        if (!panel || panel.visible === false) {
+            box.style.display = 'none';
+            return;
+        }
+        box.style.display = 'flex';
+
+        const lblTitle = document.createElement('div');
+        lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
+        lblTitle.textContent = 'Panel:';
+        box.appendChild(lblTitle);
+
+        // Farbe
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Farbe';
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = panel.bgColor || '#404040';
+        colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.oninput = (e) => {
+            const cur = this._leLayouts[mode] && this._leLayouts[mode].panel;
+            if (!cur) return;
+            this._leLayouts[mode].panel = { ...cur, bgColor: e.target.value };
+            this._leRenderGridEls(mode);
+        };
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorInp);
+        box.appendChild(colorWrap);
+
+        // Alpha
+        const alphaWrap = document.createElement('div');
+        alphaWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:140px;';
+        const alphaLbl = document.createElement('label');
+        alphaLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        const alphaVal = (panel.bgAlpha != null) ? panel.bgAlpha : 0.5;
+        alphaLbl.textContent = 'Transparenz: ' + Math.round(alphaVal * 100) + '%';
+        const alphaInp = document.createElement('input');
+        alphaInp.type = 'range';
+        alphaInp.min = '0'; alphaInp.max = '100'; alphaInp.step = '1';
+        alphaInp.value = Math.round(alphaVal * 100);
+        alphaInp.style.cssText = 'width:130px;';
+        alphaInp.oninput = (e) => {
+            const a = Number(e.target.value) / 100;
+            alphaLbl.textContent = 'Transparenz: ' + e.target.value + '%';
+            const cur = this._leLayouts[mode] && this._leLayouts[mode].panel;
+            if (!cur) return;
+            this._leLayouts[mode].panel = { ...cur, bgAlpha: a };
+            this._leRenderGridEls(mode);
+        };
+        alphaWrap.appendChild(alphaLbl);
+        alphaWrap.appendChild(alphaInp);
+        box.appendChild(alphaWrap);
+
+        // Eckradius
+        const radWrap = document.createElement('div');
+        radWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const radLbl = document.createElement('label');
+        radLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        radLbl.textContent = 'Eckradius (px)';
+        const radInp = document.createElement('input');
+        radInp.type = 'number';
+        radInp.min = '0'; radInp.max = '40'; radInp.step = '1';
+        radInp.value = (panel.radius != null) ? panel.radius : 8;
+        radInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        radInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            const cur = this._leLayouts[mode] && this._leLayouts[mode].panel;
+            if (!cur) return;
+            this._leLayouts[mode].panel = { ...cur, radius: Number.isFinite(v) ? v : 8 };
+            this._leRenderGridEls(mode);
+        };
+        radWrap.appendChild(radLbl);
+        radWrap.appendChild(radInp);
+        box.appendChild(radWrap);
     }
 
     // Auto-Save: Layout-Änderungen sofort in HA-Config speichern
@@ -2192,6 +2316,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             grid.appendChild(this._leCreateEl(key, def, cat, mode));
         });
         this._leCheckOverlaps(mode);
+        this._leRenderPanelControls(mode);
     }
 
     _leCheckOverlaps(mode) {
@@ -2200,8 +2325,10 @@ class HarmonyCompanionEditor extends HTMLElement {
         const layout = this._leLayouts[mode] || {};
         const els = [...grid.querySelectorAll('.le-el')];
         // Rechtecke aus gespeichertem Layout ermitteln (def.w/def.h für resize-fähige Größen)
+        // Panel ist Hintergrund-Element → wird vom Overlap-Check ausgenommen
         const rects = els.map(el => {
             const key = el.dataset.key;
+            if (key === 'panel') return null;
             const def = layout[key];
             if (!def) return null;
             const cat = hcCatalogFor(key, def);
@@ -2260,6 +2387,7 @@ class HarmonyCompanionEditor extends HTMLElement {
     _leCreateEl(key, def, cat, mode) {
         const S = this._leScale;
         const isIcon   = (key === 'power' || key === 'logo' || key === 'menu');
+        const isPanel  = (key === 'panel');
         const isTime   = (key === 'time');
         const w = def.w || cat.w;
         const h = def.h || cat.h;
@@ -2270,18 +2398,21 @@ class HarmonyCompanionEditor extends HTMLElement {
         const el = document.createElement('div');
         el.className = 'le-el';
         el.dataset.key = key;
+        const bgColor = isPanel ? hcPanelBg(def) : cat.color;
+        const radius  = isPanel ? (((def.radius != null) ? def.radius : 8) + 'px') : '3px';
+        const zIdx    = isPanel ? '1' : '2';
         el.style.cssText = [
             'position:absolute;',
             `left:${def.left * S}px;top:${def.top * S}px;`,
             `width:${w * S}px;height:${h * S}px;`,
-            `background:${cat.color};color:${cat.fg};`,
+            `background:${bgColor};color:${cat.fg};`,
             'font-size:10px;font-weight:700;',
             `display:flex;align-items:center;justify-content:${align};`,
             isIcon ? 'flex-direction:column;text-align:center;' : '',
             pad,
-            'border-radius:3px;cursor:grab;user-select:none;touch-action:none;',
-            'box-sizing:border-box;z-index:2;overflow:hidden;white-space:nowrap;',
-            'border:1px solid rgba(255,255,255,0.3);',
+            `border-radius:${radius};cursor:grab;user-select:none;touch-action:none;`,
+            `box-sizing:border-box;z-index:${zIdx};overflow:hidden;white-space:nowrap;`,
+            isPanel ? 'border:1px dashed rgba(255,255,255,0.6);' : 'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
         const catalogKey = key === 'logo'
             ? (h >= 42 ? 'logo_xl' : h >= 35 ? 'logo_l' : h >= 30 ? 'logo_m' : 'logo_s')
