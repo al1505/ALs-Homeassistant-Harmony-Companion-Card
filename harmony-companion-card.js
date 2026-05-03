@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.0 (visueller Drag-and-Drop Layout-Editor fuer TV + Kodi)
+// Version: 4.0.1 (Bugfixes: Zeit-Anzeige, Apply-Fix, Editor 2x + Snap-Preview)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.0";
+const HC_VERSION = "4.0.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -1207,13 +1207,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 timeEl.textContent   = '';
                 timeEl.style.display = 'none';
             }
-            // Inline-Positionierung zuruecksetzen → CSS-Layout uebernimmt
-            timeEl.style.position  = '';
-            timeEl.style.bottom    = '';
-            timeEl.style.right     = '';
-            timeEl.style.left      = '';
-            timeEl.style.textAlign = '';
-            timeEl.style.marginTop = '';
+            // Position wird durch _applyDisplayLayout gesetzt – kein Reset noetig.
         }
 
         // ---- Fortschrittsbalken ----
@@ -1565,7 +1559,7 @@ class HarmonyCompanionCard extends HTMLElement {
     // Wendet Layout-Positionen aus Config (tv_layout / media_layout) als Inline-Styles an.
     _applyDisplayLayout(display, mode) {
         const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
-        const stored = (this._config && this._config[cfgKey]) || {};
+        const stored = (this.config && this.config[cfgKey]) || {};
         const defs   = hcDefaultLayout(mode);
         const layout = {};
         new Set([...Object.keys(defs), ...Object.keys(stored)])
@@ -1879,11 +1873,16 @@ class HarmonyCompanionEditor extends HTMLElement {
     }
 
     // -------- SECTION: DISPLAY LAYOUT (visueller Editor) --------
+    // Anzeigeskalierung: Grid wird 2× vergrößert dargestellt für bessere Bedienbarkeit.
+    // Alle gespeicherten Koordinaten bleiben in echten Pixeln (10px/7px Raster).
+    get _leScale() { return 2; }
+
     _sectionLayout() {
         if (!this._leMode)    this._leMode    = 'tv';
         if (!this._leLayouts) this._leLayouts = {};
 
         const { det, body } = this._details('sec-layout', 'Display-Layout');
+        const S = this._leScale;
 
         // Tabs TV / Kodi
         const tabBar = document.createElement('div');
@@ -1903,46 +1902,60 @@ class HarmonyCompanionEditor extends HTMLElement {
         const mode = this._leMode;
         if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
 
-        // Grid 320 × 126 px
+        // Grid (2× vergrößert: 640×252 px)
         const grid = document.createElement('div');
         grid.style.cssText = [
-            `width:${HC_DISP_W}px;height:${HC_DISP_H}px;`,
-            'position:relative;overflow:visible;',
-            'background:#1c1c2e;',
-            'background-image:',
-            `linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),`,
-            `linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px);`,
-            `background-size:${HC_COL_W}px ${HC_ROW_H}px;`,
-            'border:1px solid rgba(255,255,255,0.25);border-radius:4px;',
-            'box-sizing:border-box;cursor:crosshair;flex-shrink:0;',
+            `width:${HC_DISP_W * S}px;height:${HC_DISP_H * S}px;`,
+            'position:relative;overflow:hidden;',
+            'background:#1a1a2e;',
+            `background-image:linear-gradient(rgba(255,255,255,0.13) 1px,transparent 1px),`,
+            `linear-gradient(90deg,rgba(255,255,255,0.13) 1px,transparent 1px);`,
+            `background-size:${HC_COL_W * S}px ${HC_ROW_H * S}px;`,
+            'border:2px solid rgba(255,255,255,0.35);border-radius:5px;',
+            'box-sizing:border-box;cursor:crosshair;flex-shrink:0;touch-action:none;',
         ].join('');
         this._leGridEl = grid;
 
+        // Snap-Preview (zeigt Zielposition beim Ziehen)
+        const snapPrev = document.createElement('div');
+        snapPrev.style.cssText = [
+            'position:absolute;pointer-events:none;display:none;z-index:5;',
+            'border:2px dashed rgba(255,255,255,0.9);box-sizing:border-box;',
+            'background:rgba(255,255,255,0.12);border-radius:2px;',
+        ].join('');
+        grid.appendChild(snapPrev);
+        this._leSnapPrev = snapPrev;
+
         const coordTip = document.createElement('div');
-        coordTip.style.cssText = 'font-size:10px;color:var(--secondary-text-color);min-height:14px;margin-top:3px;font-family:monospace;';
+        coordTip.style.cssText = 'font-size:11px;color:var(--secondary-text-color);min-height:16px;margin-top:4px;font-family:monospace;letter-spacing:0.02em;';
         this._leCoordTip = coordTip;
 
         grid.addEventListener('pointermove', (e) => {
             if (this._leDrag) return;
             const r = grid.getBoundingClientRect();
-            const gx = Math.max(0, Math.min(HC_DISP_W, Math.round((e.clientX - r.left) / HC_COL_W) * HC_COL_W));
-            const gy = Math.max(0, Math.min(HC_DISP_H, Math.round((e.clientY - r.top)  / HC_ROW_H) * HC_ROW_H));
-            coordTip.textContent = `x: ${gx}px  y: ${gy}px`;
+            const gx = Math.max(0, Math.min(HC_DISP_W, Math.round((e.clientX - r.left) / (HC_COL_W * S)) * HC_COL_W));
+            const gy = Math.max(0, Math.min(HC_DISP_H, Math.round((e.clientY - r.top)  / (HC_ROW_H * S)) * HC_ROW_H));
+            coordTip.textContent = 'x: ' + gx + 'px  y: ' + gy + 'px';
         });
         grid.addEventListener('pointerleave', () => { if (!this._leDrag) coordTip.textContent = ''; });
 
         this._leRenderGridEls(mode);
-        body.appendChild(grid);
+
+        // Scrollbarer Wrapper (falls Config-Panel schmäler als 640px)
+        const scrollWrap = document.createElement('div');
+        scrollWrap.style.cssText = 'overflow-x:auto;width:100%;-webkit-overflow-scrolling:touch;padding-bottom:2px;';
+        scrollWrap.appendChild(grid);
+        body.appendChild(scrollWrap);
         body.appendChild(coordTip);
 
         // Palette
         const palLbl = document.createElement('div');
-        palLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:10px;margin-bottom:5px;';
-        palLbl.textContent = 'Elemente auf das Raster ziehen · vom Raster ziehen zum Entfernen:';
+        palLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:10px;margin-bottom:6px;';
+        palLbl.textContent = 'Auf das Raster ziehen · vom Raster wegziehen zum Entfernen:';
         body.appendChild(palLbl);
 
         const palette = document.createElement('div');
-        palette.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;';
+        palette.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;';
         this._lePaletteEl = palette;
         this._leRenderPaletteItems(mode, palette);
         body.appendChild(palette);
@@ -2010,10 +2023,10 @@ class HarmonyCompanionEditor extends HTMLElement {
                 (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 60 : placed.h < 60));
             const item = document.createElement('div');
             item.style.cssText = [
-                'padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);',
+                'padding:4px 10px;border-radius:5px;border:1px solid rgba(255,255,255,0.25);',
                 `background:${cat.color};color:${cat.fg};`,
-                'font-size:10px;cursor:grab;user-select:none;white-space:nowrap;',
-                `opacity:${isPlaced ? '0.38' : '1'};transition:opacity .15s;`,
+                'font-size:11px;font-weight:600;cursor:grab;user-select:none;white-space:nowrap;',
+                `opacity:${isPlaced ? '0.35' : '1'};transition:opacity .15s;touch-action:none;`,
             ].join('');
             item.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
             item.addEventListener('pointerdown', (e) => {
@@ -2025,22 +2038,23 @@ class HarmonyCompanionEditor extends HTMLElement {
     }
 
     _leCreateEl(key, def, cat, mode) {
+        const S = this._leScale;
         const el = document.createElement('div');
         el.className = 'le-el';
         el.dataset.key = key;
         el.style.cssText = [
             'position:absolute;',
-            `left:${def.left}px;top:${def.top}px;`,
-            `width:${cat.w}px;height:${cat.h}px;`,
+            `left:${def.left * S}px;top:${def.top * S}px;`,
+            `width:${cat.w * S}px;height:${cat.h * S}px;`,
             `background:${cat.color};color:${cat.fg};`,
-            'font-size:8px;font-weight:bold;',
+            'font-size:10px;font-weight:700;',
             'display:flex;align-items:center;justify-content:center;text-align:center;',
-            'border-radius:2px;cursor:grab;user-select:none;',
-            'box-sizing:border-box;z-index:2;overflow:hidden;',
-            'line-height:1.15;white-space:pre-line;',
+            'border-radius:3px;cursor:grab;user-select:none;touch-action:none;',
+            'box-sizing:border-box;z-index:2;overflow:hidden;white-space:nowrap;',
+            'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
         const catalogKey = key === 'logo' ? (def.h >= 60 ? 'logo_l' : 'logo_s') : key;
-        el.textContent = cat.label + '\n' + cat.w + '×' + cat.h;
+        el.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
         el.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             this._leStartDrag(e, catalogKey, el, mode);
@@ -2051,40 +2065,42 @@ class HarmonyCompanionEditor extends HTMLElement {
     _leStartDrag(e, catalogKey, sourceEl, mode) {
         const cat = HC_ELEM_CATALOG[catalogKey];
         if (!cat) return;
-        const srcRect = sourceEl.getBoundingClientRect();
-        const offsetX = e.clientX - srcRect.left;
-        const offsetY = e.clientY - srcRect.top;
+        const S = this._leScale;
 
-        const ghost = document.createElement('div');
-        ghost.style.cssText = [
-            'position:fixed;pointer-events:none;z-index:99999;',
-            `width:${cat.w}px;height:${cat.h}px;`,
-            `background:${cat.color};color:${cat.fg};`,
-            'opacity:0.82;border-radius:3px;',
-            'border:2px dashed rgba(255,255,255,0.75);',
-            'font-size:8px;font-weight:bold;',
-            'display:flex;align-items:center;justify-content:center;text-align:center;',
-            'box-sizing:border-box;white-space:pre-line;line-height:1.15;',
-            `left:${e.clientX - offsetX}px;top:${e.clientY - offsetY}px;`,
-        ].join('');
-        ghost.textContent = cat.label + '\n' + cat.w + '×' + cat.h;
-        document.body.appendChild(ghost);
-        this._leDrag = { catalogKey, ghost, offsetX, offsetY, mode };
+        // Offset: Mitte des Elements als Ankerpunkt
+        const offsetX = cat.w * S / 2;
+        const offsetY = cat.h * S / 2;
+
+        this._leDrag = { catalogKey, offsetX, offsetY, mode };
+
+        const grid = this._leGridEl;
 
         const onMove = (ev) => {
-            ghost.style.left = (ev.clientX - offsetX) + 'px';
-            ghost.style.top  = (ev.clientY - offsetY) + 'px';
-            if (this._leGridEl && this._leCoordTip) {
-                const gr = this._leGridEl.getBoundingClientRect();
-                const gx = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((ev.clientX - gr.left - offsetX) / HC_COL_W) * HC_COL_W));
-                const gy = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((ev.clientY - gr.top  - offsetY) / HC_ROW_H) * HC_ROW_H));
-                this._leCoordTip.textContent = '→ x: ' + gx + 'px  y: ' + gy + 'px';
+            if (!grid) return;
+            const gr = grid.getBoundingClientRect();
+            const relX = ev.clientX - gr.left - offsetX;
+            const relY = ev.clientY - gr.top  - offsetY;
+            const inGrid = relX > -cat.w * S * 0.5 && relX < HC_DISP_W * S - cat.w * S * 0.5 &&
+                           relY > -cat.h * S * 0.5 && relY < HC_DISP_H * S - cat.h * S * 0.5;
+            const sp = this._leSnapPrev;
+            if (inGrid && sp) {
+                const sl = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
+                const st = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+                sp.style.display = 'block';
+                sp.style.left    = (sl * S) + 'px';
+                sp.style.top     = (st * S) + 'px';
+                sp.style.width   = (cat.w * S) + 'px';
+                sp.style.height  = (cat.h * S) + 'px';
+                if (this._leCoordTip) this._leCoordTip.textContent = '→ x: ' + sl + 'px  y: ' + st + 'px';
+            } else {
+                if (sp) sp.style.display = 'none';
+                if (this._leCoordTip) this._leCoordTip.textContent = '';
             }
         };
         const onUp = (ev) => {
             document.removeEventListener('pointermove', onMove);
             document.removeEventListener('pointerup',   onUp);
-            ghost.remove();
+            if (this._leSnapPrev) this._leSnapPrev.style.display = 'none';
             this._leDrop(ev, catalogKey, offsetX, offsetY, mode);
             this._leDrag = null;
             if (this._leCoordTip) this._leCoordTip.textContent = '';
@@ -2096,20 +2112,21 @@ class HarmonyCompanionEditor extends HTMLElement {
     _leDrop(e, catalogKey, offsetX, offsetY, mode) {
         const grid = this._leGridEl;
         if (!grid) return;
-        const cat     = HC_ELEM_CATALOG[catalogKey];
+        const cat       = HC_ELEM_CATALOG[catalogKey];
         const layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
-        const gr      = grid.getBoundingClientRect();
-        const relX    = e.clientX - gr.left - offsetX;
-        const relY    = e.clientY - gr.top  - offsetY;
+        const S         = this._leScale;
+        const gr        = grid.getBoundingClientRect();
+        const relX      = e.clientX - gr.left - offsetX;
+        const relY      = e.clientY - gr.top  - offsetY;
 
         if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
-        const layout  = { ...this._leLayouts[mode] };
+        const layout = { ...this._leLayouts[mode] };
 
-        const inGrid = relX > -cat.w * 0.5 && relX < HC_DISP_W - cat.w * 0.5 &&
-                       relY > -cat.h * 0.5 && relY < HC_DISP_H - cat.h * 0.5;
+        const inGrid = relX > -cat.w * S * 0.5 && relX < HC_DISP_W * S - cat.w * S * 0.5 &&
+                       relY > -cat.h * S * 0.5 && relY < HC_DISP_H * S - cat.h * S * 0.5;
         if (inGrid) {
-            const left = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round(relX / HC_COL_W) * HC_COL_W));
-            const top  = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round(relY / HC_ROW_H) * HC_ROW_H));
+            const left = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
+            const top  = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
             layout[layoutKey] = { left, top, w: cat.w, h: cat.h, visible: true };
         } else {
             delete layout[layoutKey];
