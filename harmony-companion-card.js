@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.21.1";
+const HC_VERSION = "3.21.2";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -410,6 +410,15 @@ class HarmonyCompanionCard extends HTMLElement {
                 .display-zone.media-mode #display-activity {
                     position: absolute; left: 40px; top: 7px; width: 160px; height: 14px; line-height: 14px;
                     display: flex !important; align-items: center; font-size: 11px; margin: 0; z-index: 4;
+                }
+                .display-zone.media-mode #display-channel { display: none !important; }
+                .display-zone.media-mode #display-title {
+                    position: absolute; left: 0; bottom: 21px; top: auto; width: 280px;
+                    line-height: 14px; margin: 0; z-index: 4;
+                }
+                .display-zone.media-mode #display-time {
+                    position: absolute; left: 0; bottom: 7px; top: auto; width: 280px;
+                    line-height: 14px; text-align: left; margin: 0; z-index: 4;
                 }
                 /* ============================================================
                    DISPLAY LAYOUTS 1-6 (data-layout Attribut)
