@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.2 (Editor: Logo 48px, Zeit gelb, Grid 2x feiner, Overlap-Check,
-//                  Layout-Sektion top-level, Snap-Limit Progress-Bar, Zeit-Ausrichtung dyn.)
+// Version: 4.0.3 (Default-Layout v4: Zeit ganz unten, echte Font-Höhen statt line-height-Trick,
+//                  Textelemente height:auto + lineHeight:1.2 in _applyDisplayLayout)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.2";
+const HC_VERSION = "4.0.3";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -33,14 +33,15 @@ const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 320 px
 const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
+// Höhen = tatsächliche Render-Höhe (font-size × line-height 1.2), kein line-height-Trick
 const HC_ELEM_CATALOG = {
     power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
     logo_l:   { label: 'Logo L',   w: 48,  h: 48, color: '#2255aa', fg: '#fff' },
     logo_s:   { label: 'Logo S',   w: 40,  h: 40, color: '#3366bb', fg: '#fff' },
-    activity: { label: 'Activity', w: 120, h: 14, color: '#885500', fg: '#fff' },
-    channel:  { label: 'Sender',   w: 120, h: 21, color: '#1a6633', fg: '#fff' },
-    title:    { label: 'Titel',    w: 200, h: 14, color: '#7a1f5a', fg: '#fff' },
-    time:     { label: 'Zeit',     w: 120, h: 14, color: '#c8a000', fg: '#222' },
+    activity: { label: 'Activity', w: 220, h: 13, color: '#885500', fg: '#fff' },  // 11px × 1.2
+    channel:  { label: 'Sender',   w: 220, h: 19, color: '#1a6633', fg: '#fff' },  // 16px × 1.2
+    title:    { label: 'Titel',    w: 220, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px × 1.2
+    time:     { label: 'Zeit',     w: 220, h: 13, color: '#c8a000', fg: '#222' },  // 11px × 1.2
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
@@ -55,24 +56,29 @@ function hcCatalogFor(layoutKey, def) {
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
 
-// Standard-Layouts: Startpunkt für neuen Editor-Slot (= bisheriges Layout 1)
+// Standard-Layouts für v4 (absolute Positionierung, 126px Display-Höhe)
+// Alle Positionen sind reale Pixel — kein line-height-Trick, Höhen = tatsächliche Font-Höhe.
+// Zeit ganz unten (top:108 = 126 - 4px Progressbar - 14px Reserve), Titel direkt darüber.
 function hcDefaultLayout(mode) {
     if (mode === 'tv') return {
-        power:    { left: 0,   top: 49, w: 30,  h: 28, visible: true },
-        logo:     { left: 40,  top: 39, w: 48,  h: 48, visible: true },
-        activity: { left: 120, top: 21, w: 120, h: 14, visible: true },
-        channel:  { left: 120, top: 42, w: 120, h: 21, visible: true },
-        title:    { left: 120, top: 70, w: 200, h: 14, visible: true },
-        time:     { left: 120, top: 91, w: 120, h: 14, visible: true },
+        // Power: vertikal zentriert (126-28)/2=49
+        power:    { left: 0,   top: 49,  w: 30,  h: 28, visible: true },
+        // Logo L: vertikal zentriert (126-48)/2=39; startet rechts neben Power (40px)
+        logo:     { left: 40,  top: 39,  w: 48,  h: 48, visible: true },
+        // Texte beginnen nach Logo (40+48+7=95): oben Activity + Sender, unten Titel + Zeit
+        activity: { left: 95,  top: 3,   w: 220, h: 13, visible: true },
+        channel:  { left: 95,  top: 21,  w: 220, h: 19, visible: true },
+        title:    { left: 95,  top: 87,  w: 220, h: 17, visible: true },
+        time:     { left: 95,  top: 108, w: 220, h: 13, visible: true },
     };
-    // Kodi / Media-Modus
+    // Kodi / Media-Modus (kein Logo/Sender)
     return {
-        power:    { left: 0,  top: 0,   w: 30,  h: 28, visible: true },
+        power:    { left: 0,  top: 49,  w: 30,  h: 28, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
-        activity: { left: 40, top: 7,   w: 120, h: 14, visible: true },
-        title:    { left: 0,  top: 91,  w: 280, h: 14, visible: true },
-        time:     { left: 0,  top: 105, w: 280, h: 14, visible: true },
+        activity: { left: 40, top: 3,   w: 275, h: 13, visible: true },
+        title:    { left: 0,  top: 87,  w: 315, h: 17, visible: true },
+        time:     { left: 0,  top: 108, w: 315, h: 13, visible: true },
     };
 }
 
@@ -1576,6 +1582,7 @@ class HarmonyCompanionCard extends HTMLElement {
             const el = display.querySelector('#' + (idMap[key] || ''));
             if (!el) return;
             if (def.visible === false) { el.style.display = 'none'; return; }
+            const isIcon = (key === 'logo' || key === 'power');
             el.style.position  = 'absolute';
             el.style.left      = def.left + 'px';
             el.style.top       = def.top  + 'px';
@@ -1585,15 +1592,22 @@ class HarmonyCompanionCard extends HTMLElement {
             el.style.margin    = '0';
             el.style.zIndex    = '3';
             el.style.width     = def.w + 'px';
-            el.style.height    = def.h + 'px';
             el.style.overflow  = 'hidden';
-            if (key !== 'logo' && key !== 'power') el.style.lineHeight = def.h + 'px';
+            if (isIcon) {
+                // Icon/Logo: explizite Größe beibehalten
+                el.style.height     = def.h + 'px';
+                el.style.lineHeight = '';
+            } else {
+                // Textelemente: natürliche Font-Höhe, kein künstlicher line-height-Trick
+                el.style.height     = 'auto';
+                el.style.lineHeight = '1.2';
+            }
             if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
             if (key === 'time') {
-                const timeRight = def.left + (def.w || 120) > HC_DISP_W * 0.55;
-                el.style.textAlign  = timeRight ? 'right'  : 'left';
-                el.style.paddingRight = timeRight ? '5px' : '0';
-                el.style.paddingLeft  = timeRight ? '0'   : '0';
+                const timeRight = def.left + (def.w || 220) > HC_DISP_W * 0.55;
+                el.style.textAlign    = timeRight ? 'right' : 'left';
+                el.style.paddingRight = timeRight ? '5px'   : '0';
+                el.style.paddingLeft  = '0';
             }
         });
     }
