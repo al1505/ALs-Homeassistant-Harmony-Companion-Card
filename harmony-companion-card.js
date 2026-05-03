@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.3.0 (Logo M (50x33) hinzugefuegt, neue Default-Groessen, Bottom/Right-Anchoring
-//                  entfernt — kein Sprung beim Verschieben ueber Display-Mitte mehr)
+// Version: 4.3.1 (Auto-Save im Editor: alle Aenderungen werden sofort gespeichert,
+//                  "Uebernehmen"-Button entfernt, "Zuruecksetzen" speichert auch sofort)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.3.0";
+const HC_VERSION = "4.3.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2060,27 +2060,33 @@ class HarmonyCompanionEditor extends HTMLElement {
         actRow.style.cssText = 'display:flex;gap:8px;';
 
         const btnReset = document.createElement('button');
-        btnReset.textContent = 'Zurücksetzen';
+        btnReset.textContent = 'Auf Standard zurücksetzen';
         btnReset.style.cssText = 'padding:6px 12px;border-radius:6px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;background:transparent;color:inherit;';
         btnReset.onclick = () => {
             this._leLayouts[mode] = hcDefaultLayout(mode);
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
-        };
-
-        const btnApply = document.createElement('button');
-        btnApply.textContent = 'Übernehmen';
-        btnApply.style.cssText = 'padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--primary-color,#03a9f4);color:#fff;';
-        btnApply.onclick = () => {
-            const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
-            this._patchTop(cfgKey, this._leLayouts[mode] || this._leLoadLayout(mode));
+            this._leSaveLayout(mode);  // Auto-save
         };
 
         actRow.appendChild(btnReset);
-        actRow.appendChild(btnApply);
         body.appendChild(actRow);
 
+        // Auto-Save-Hinweis
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:8px;font-style:italic;';
+        hint.textContent = 'Änderungen werden automatisch gespeichert.';
+        body.appendChild(hint);
+
         return det;
+    }
+
+    // Auto-Save: Layout-Änderungen sofort in HA-Config speichern
+    _leSaveLayout(mode) {
+        const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
+        if (this._leLayouts && this._leLayouts[mode]) {
+            this._patchTop(cfgKey, this._leLayouts[mode]);
+        }
     }
 
     _leLoadLayout(mode) {
@@ -2287,6 +2293,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             this._leLayouts[mode] = layout;
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
+            this._leSaveLayout(mode);  // Auto-save
             if (this._leCoordTip) this._leCoordTip.textContent = '';
         };
         document.addEventListener('pointermove', onMove);
@@ -2381,6 +2388,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         this._leLayouts[mode] = layout;
         this._leRenderGridEls(mode);
         this._leRenderPaletteItems(mode, this._lePaletteEl);
+        this._leSaveLayout(mode);  // Auto-save
     }
 
     // -------- SECTION: ENIGMA2 / OPENWEBIF --------
