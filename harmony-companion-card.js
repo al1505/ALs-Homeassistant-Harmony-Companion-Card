@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.5 (Logo Querformat 48x35/40x28, Zeit-Default unten-rechts (left:200) damit
-//                  rechtsbuendiger Text am Display-Rand erscheint, top:113 ganz am Boden)
+// Version: 4.0.6 (Bottom/Right-Anchoring: Elemente im unteren/rechten Bereich werden via
+//                  bottom/right CSS positioniert (kleben an Display-Rand). Titel-Breite 200.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.5";
+const HC_VERSION = "4.0.6";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -41,7 +41,7 @@ const HC_ELEM_CATALOG = {
     logo_s:   { label: 'Logo S',   w: 40,  h: 28, color: '#3366bb', fg: '#fff' },  // Picon Querformat klein
     activity: { label: 'Activity', w: 140, h: 13, color: '#dd7700', fg: '#fff' },  // orange, 11px×1.2
     channel:  { label: 'Sender',   w: 140, h: 19, color: '#1a6633', fg: '#fff' },  // 16px×1.2
-    title:    { label: 'Titel',    w: 120, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px×1.2
+    title:    { label: 'Titel',    w: 200, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px×1.2
     time:     { label: 'Zeit',     w: 120, h: 13, color: '#e8cc00', fg: '#111' },  // helles Gelb, 11px×1.2
 };
 
@@ -69,7 +69,7 @@ function hcDefaultLayout(mode) {
         logo:     { left: 40,  top: 45,  w: 48,  h: 35, visible: true },  // zentriert (126-35)/2
         activity: { left: 95,  top: 3,   w: 140, h: 13, visible: true },  // oben rechts
         channel:  { left: 95,  top: 21,  w: 140, h: 19, visible: true },  // darunter
-        title:    { left: 95,  top: 93,  w: 120, h: 17, visible: true },  // über Zeit
+        title:    { left: 95,  top: 93,  w: 200, h: 17, visible: true },  // über Zeit
         time:     { left: 200, top: 113, w: 120, h: 13, visible: true },  // ganz unten-rechts
     };
     // Kodi / Media-Modus (kein Logo/Sender)
@@ -79,7 +79,7 @@ function hcDefaultLayout(mode) {
         channel:  { visible: false },
         activity: { left: 40,  top: 3,   w: 275, h: 13, visible: true },
         title:    { left: 0,   top: 93,  w: 315, h: 17, visible: true },
-        time:     { left: 200, top: 113, w: 120, h: 13, visible: true },  // ebenfalls unten-rechts
+        time:     { left: 200, top: 113, w: 120, h: 13, visible: true },
     };
 }
 
@@ -1584,31 +1584,48 @@ class HarmonyCompanionCard extends HTMLElement {
             if (!el) return;
             if (def.visible === false) { el.style.display = 'none'; return; }
             const isIcon = (key === 'logo' || key === 'power');
+            const w = def.w || 30;
+            const h = def.h || 14;
+            // Anker bestimmen: Element-Mittelpunkt im rechten/unteren Bereich? → von rechts/unten ankern
+            const cx = (def.left || 0) + w / 2;
+            const cy = (def.top  || 0) + h / 2;
+            const anchorRight  = cx > HC_DISP_W * 0.55;
+            const anchorBottom = cy > HC_DISP_H * 0.55;
+
             el.style.position  = 'absolute';
-            el.style.left      = def.left + 'px';
-            el.style.top       = def.top  + 'px';
-            el.style.right     = 'auto';
-            el.style.bottom    = 'auto';
+            // Horizontal-Anker
+            if (anchorRight) {
+                el.style.left  = 'auto';
+                el.style.right = (HC_DISP_W - (def.left || 0) - w) + 'px';
+            } else {
+                el.style.left  = (def.left || 0) + 'px';
+                el.style.right = 'auto';
+            }
+            // Vertikal-Anker
+            if (anchorBottom) {
+                el.style.top    = 'auto';
+                el.style.bottom = (HC_DISP_H - (def.top || 0) - h) + 'px';
+            } else {
+                el.style.top    = (def.top || 0) + 'px';
+                el.style.bottom = 'auto';
+            }
             el.style.transform = 'none';
             el.style.margin    = '0';
             el.style.zIndex    = '3';
-            el.style.width     = def.w + 'px';
+            el.style.width     = w + 'px';
             el.style.overflow  = 'hidden';
             if (isIcon) {
-                // Icon/Logo: explizite Größe beibehalten
-                el.style.height     = def.h + 'px';
+                el.style.height     = h + 'px';
                 el.style.lineHeight = '';
             } else {
-                // Textelemente: natürliche Font-Höhe, kein künstlicher line-height-Trick
                 el.style.height     = 'auto';
                 el.style.lineHeight = '1.2';
             }
             if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
             if (key === 'time') {
-                const timeRight = def.left + (def.w || 220) > HC_DISP_W * 0.55;
-                el.style.textAlign    = timeRight ? 'right' : 'left';
-                el.style.paddingRight = timeRight ? '5px'   : '0';
-                el.style.paddingLeft  = '0';
+                el.style.textAlign    = anchorRight ? 'right' : 'left';
+                el.style.paddingRight = anchorRight ? '5px'   : '0';
+                el.style.paddingLeft  = anchorRight ? '0'     : '5px';
             }
         });
     }
