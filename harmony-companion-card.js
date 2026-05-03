@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.1.0 (Resize: Elemente in Editor an unterer rechter Ecke ziehbar zum Größe ändern,
-//                  Verschieben behält Größe, Resize-Snap auf Grid 5x3 px)
+// Version: 4.2.0 (Zeit-Format auf "+109m", neues Element "Beg-End" (00:10 - 01:36) als
+//                  zweites Zeitfeld in dunklerem Gelb)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.1.0";
+const HC_VERSION = "4.2.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -43,13 +43,14 @@ const HC_ELEM_CATALOG = {
     activity: { label: 'Activity', w: 140, h: 13, color: '#dd7700', fg: '#fff' },  // orange, 11px×1.2
     channel:  { label: 'Sender',   w: 140, h: 19, color: '#1a6633', fg: '#fff' },  // 16px×1.2
     title:    { label: 'Titel',    w: 200, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px×1.2
-    time:     { label: 'Zeit',     w: 120, h: 13, color: '#e8cc00', fg: '#111' },  // helles Gelb, 11px×1.2
+    time:     { label: 'Zeit',     w: 50,  h: 13, color: '#e8cc00', fg: '#111' },  // helles Gelb, "+109m"
+    timespan: { label: 'Beg-End',  w: 70,  h: 13, color: '#b8a000', fg: '#fff' },  // dunkleres Gelb, "00:10 - 01:36"
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
 const HC_MODE_ELEMS = {
-    tv:    ['power', 'logo_xl', 'logo_l', 'logo_s', 'activity', 'channel', 'title', 'time'],
-    media: ['power', 'activity', 'title', 'time'],
+    tv:    ['power', 'logo_xl', 'logo_l', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
+    media: ['power', 'activity', 'title', 'time', 'timespan'],
 };
 
 // Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_xl/logo_l/logo_s je h)
@@ -76,7 +77,9 @@ function hcDefaultLayout(mode) {
         activity: { left: 95,  top: 3,   w: 140, h: 13, visible: true },  // oben rechts
         channel:  { left: 95,  top: 21,  w: 140, h: 19, visible: true },  // darunter
         title:    { left: 95,  top: 93,  w: 200, h: 17, visible: true },  // über Zeit
-        time:     { left: 200, top: 113, w: 120, h: 13, visible: true },  // ganz unten-rechts
+        // Zeit unten-rechts (50×13 für "+109m"), Timespan links davon (70×13 für "00:10 - 01:36")
+        time:     { left: 270, top: 113, w: 50,  h: 13, visible: true },
+        timespan: { left: 195, top: 113, w: 70,  h: 13, visible: true },
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
@@ -85,7 +88,8 @@ function hcDefaultLayout(mode) {
         channel:  { visible: false },
         activity: { left: 40,  top: 3,   w: 275, h: 13, visible: true },
         title:    { left: 0,   top: 93,  w: 315, h: 17, visible: true },
-        time:     { left: 200, top: 113, w: 120, h: 13, visible: true },
+        time:     { left: 270, top: 113, w: 50,  h: 13, visible: true },
+        timespan: { left: 195, top: 113, w: 70,  h: 13, visible: true },
     };
 }
 
@@ -462,6 +466,11 @@ class HarmonyCompanionCard extends HTMLElement {
                     opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
                     display: none;
                 }
+                #display-timespan {
+                    position: relative; z-index: 2; font-size: 11px; font-weight: 500; margin-top: 4px;
+                    opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+                    display: none;
+                }
                 #display-progress {
                     position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
                     background: rgba(255,255,255,0.18); z-index: 3; cursor: pointer; display: none;
@@ -541,6 +550,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     <div id="display-channel" style="display:none;"></div>
                     <div id="display-title" style="display:none;"></div>
                     <div id="display-time"></div>
+                    <div id="display-timespan"></div>
                     <div id="display-logo"></div>
                     <div id="display-progress" style="display:none;">
                         <div id="display-progress-fill"></div>
@@ -981,18 +991,55 @@ class HarmonyCompanionCard extends HTMLElement {
     //   1. OpenWebIF (_tvData.endStr "HH:MM")
     //   2. HA-Entity media_duration / media_position / media_position_updated_at
     // Gibt '' zurueck wenn keine Daten verfuegbar.
+    // Restzeit als "+Xm" (Minuten, mit + Prefix). Beispiel: 109 Minuten → "+109m"
     _computeTimeRemaining(tvData, haAttrs) {
+        const remSec = this._computeRemainingSeconds(tvData, haAttrs);
+        if (remSec === null || remSec <= 0) return '';
+        const m = Math.max(0, Math.floor(remSec / 60));
+        return '+' + m + 'm';
+    }
+
+    // Begin-Ende als "HH:MM - HH:MM" (Sendung-Anfang bis Sendung-Ende).
+    _computeTimeSpan(tvData, haAttrs) {
         const fmtClock = (h, m) =>
             (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
-        const fmtDur = (totalSec) => {
-            if (totalSec <= 0) return '';
-            const h = Math.floor(totalSec / 3600);
-            const m = Math.floor((totalSec % 3600) / 60);
-            if (h > 0)         return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
-            if (m > 0)         return m + 'm';
-            return Math.floor(totalSec) + 's';
+        const fromTs = (ts) => {
+            const d = new Date(ts);
+            return fmtClock(d.getHours(), d.getMinutes());
         };
 
+        // 1) OpenWebIF: tvData.beginStr / endStr
+        if (tvData && tvData.beginStr && tvData.endStr) {
+            return tvData.beginStr + ' - ' + tvData.endStr;
+        }
+        // 2) Enigma2 Unix-Timestamps
+        if (haAttrs && haAttrs.currservice_begin_timestamp && haAttrs.currservice_end_timestamp) {
+            return fromTs(haAttrs.currservice_begin_timestamp * 1000) + ' - ' +
+                   fromTs(haAttrs.currservice_end_timestamp * 1000);
+        }
+        // 3) Enigma2 HH:MM-Strings als Fallback
+        if (haAttrs && haAttrs.currservice_begin && haAttrs.currservice_end) {
+            return haAttrs.currservice_begin + ' - ' + haAttrs.currservice_end;
+        }
+        // 4) Standard HA: media_position als Beginn-Offset, media_duration für Ende
+        if (haAttrs && haAttrs.media_duration) {
+            const dur     = haAttrs.media_duration;
+            const posBase = haAttrs.media_position || 0;
+            const updTs   = haAttrs.media_position_updated_at
+                ? new Date(haAttrs.media_position_updated_at).getTime()
+                : Date.now();
+            const elapsed = Math.max(0, (Date.now() - updTs) / 1000);
+            const pos     = Math.min(dur, posBase + elapsed);
+            const beginDt = new Date(Date.now() - pos * 1000);
+            const endDt   = new Date(Date.now() + (dur - pos) * 1000);
+            return fmtClock(beginDt.getHours(), beginDt.getMinutes()) + ' - ' +
+                   fmtClock(endDt.getHours(), endDt.getMinutes());
+        }
+        return '';
+    }
+
+    // Hilfsfunktion: Restzeit in Sekunden (oder null wenn unbekannt)
+    _computeRemainingSeconds(tvData, haAttrs) {
         // 1) OpenWebIF: endStr "HH:MM" -> berechne Endzeit relativ zu jetzt
         if (tvData && tvData.endStr) {
             const parts = tvData.endStr.split(':');
@@ -1002,24 +1049,16 @@ class HarmonyCompanionCard extends HTMLElement {
                     const now    = new Date();
                     const endDt  = new Date(now);
                     endDt.setHours(eh, em, 0, 0);
-                    // Endet "morgen" (z.B. Sendung ueber Mitternacht)
                     if (endDt.getTime() <= now.getTime() - 60000) endDt.setDate(endDt.getDate() + 1);
-                    const remSec = Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
-                    return fmtDur(remSec) + ' bis ' + fmtClock(eh, em) + ' Uhr';
+                    return Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
                 }
             }
         }
-
-        // 2) Enigma2 Unix-Timestamps (aus HA extra_state_attributes, z.B. media_player.vu_office)
-        //    Praeziser als HH:MM-Strings, kein Mitternachts-Overflow.
+        // 2) Enigma2 Unix-Timestamps
         if (haAttrs && haAttrs.currservice_end_timestamp) {
-            const endTs  = haAttrs.currservice_end_timestamp * 1000;
-            const remSec = Math.max(0, (endTs - Date.now()) / 1000);
-            const endDt  = new Date(endTs);
-            return fmtDur(remSec) + ' bis ' + fmtClock(endDt.getHours(), endDt.getMinutes()) + ' Uhr';
+            return Math.max(0, (haAttrs.currservice_end_timestamp * 1000 - Date.now()) / 1000);
         }
-
-        // 3) Enigma2 HH:MM-Strings als Fallback (currservice_end im HA-Entity)
+        // 3) Enigma2 HH:MM-Strings
         if (haAttrs && haAttrs.currservice_end && !haAttrs.currservice_end_timestamp) {
             const parts = (haAttrs.currservice_end || '').split(':');
             if (parts.length >= 2) {
@@ -1029,12 +1068,10 @@ class HarmonyCompanionCard extends HTMLElement {
                     const endDt  = new Date(now);
                     endDt.setHours(eh, em, 0, 0);
                     if (endDt.getTime() <= now.getTime() - 60000) endDt.setDate(endDt.getDate() + 1);
-                    const remSec = Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
-                    return fmtDur(remSec) + ' bis ' + fmtClock(eh, em) + ' Uhr';
+                    return Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
                 }
             }
         }
-
         // 4) Standard HA: media_duration / media_position
         if (haAttrs && haAttrs.media_duration) {
             const dur     = haAttrs.media_duration;
@@ -1044,12 +1081,9 @@ class HarmonyCompanionCard extends HTMLElement {
                 : Date.now();
             const elapsed = Math.max(0, (Date.now() - updTs) / 1000);
             const pos     = Math.min(dur, posBase + elapsed);
-            const remSec  = Math.max(0, dur - pos);
-            const endDt   = new Date(Date.now() + remSec * 1000);
-            return fmtDur(remSec) + ' bis ' + fmtClock(endDt.getHours(), endDt.getMinutes()) + ' Uhr';
+            return Math.max(0, dur - pos);
         }
-
-        return '';
+        return null;
     }
 
 
@@ -1189,6 +1223,8 @@ class HarmonyCompanionCard extends HTMLElement {
             if (chanEl)  chanEl.style.display  = 'none';
             if (titleEl) titleEl.style.display = 'none';
             if (timeEl)  timeEl.style.display  = 'none';
+            const spanIdle = root.getElementById('display-timespan');
+            if (spanIdle) spanIdle.style.display = 'none';
         }
 
         // Layout-Inline-Styles zuruecksetzen (Vorbereitung fuer _applyDisplayLayout).
@@ -1222,7 +1258,21 @@ class HarmonyCompanionCard extends HTMLElement {
                 timeEl.textContent   = '';
                 timeEl.style.display = 'none';
             }
-            // Position wird durch _applyDisplayLayout gesetzt – kein Reset noetig.
+        }
+
+        // ---- Begin-Ende-Anzeige (00:10 - 01:36) ----
+        const spanEl = root.getElementById('display-timespan');
+        if (spanEl) {
+            const spanStr = isPlaying
+                ? this._computeTimeSpan(tvData, haAttrs)
+                : '';
+            if (spanStr) {
+                spanEl.textContent   = spanStr;
+                spanEl.style.display = 'block';
+            } else {
+                spanEl.textContent   = '';
+                spanEl.style.display = 'none';
+            }
         }
 
         // ---- Fortschrittsbalken ----
@@ -1564,7 +1614,7 @@ class HarmonyCompanionCard extends HTMLElement {
         const props = ['position','left','top','right','bottom','transform',
                        'width','height','lineHeight','margin','zIndex','overflow'];
         ['display-power','display-logo','display-activity',
-         'display-channel','display-title','display-time'].forEach(id => {
+         'display-channel','display-title','display-time','display-timespan'].forEach(id => {
             const el = display.querySelector('#' + id);
             if (!el) return;
             props.forEach(p => { el.style[p] = ''; });
@@ -1583,7 +1633,7 @@ class HarmonyCompanionCard extends HTMLElement {
         const idMap = {
             power: 'display-power', logo: 'display-logo',
             activity: 'display-activity', channel: 'display-channel',
-            title: 'display-title', time: 'display-time',
+            title: 'display-title', time: 'display-time', timespan: 'display-timespan',
         };
         Object.entries(layout).forEach(([key, def]) => {
             const el = display.querySelector('#' + (idMap[key] || ''));
@@ -1628,7 +1678,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 el.style.lineHeight = '1.2';
             }
             if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
-            if (key === 'time') {
+            if (key === 'time' || key === 'timespan') {
                 el.style.textAlign    = anchorRight ? 'right' : 'left';
                 el.style.paddingRight = anchorRight ? '5px'   : '0';
                 el.style.paddingLeft  = anchorRight ? '0'     : '5px';
