@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.6 (Bottom/Right-Anchoring: Elemente im unteren/rechten Bereich werden via
-//                  bottom/right CSS positioniert (kleben an Display-Rand). Titel-Breite 200.)
+// Version: 4.0.7 (Logo XL hinzugefuegt: 50x50px (Quadrat). Drei Logo-Groessen jetzt:
+//                  Logo XL 50x50, Logo L 48x35 (Quer), Logo S 40x28 (Quer))
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.6";
+const HC_VERSION = "4.0.7";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -37,6 +37,7 @@ const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
 // Logos im Querformat (Picons sind typisch breiter als hoch)
 const HC_ELEM_CATALOG = {
     power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
+    logo_xl:  { label: 'Logo XL',  w: 50,  h: 50, color: '#1a3a99', fg: '#fff' },  // Picon Quadrat groß
     logo_l:   { label: 'Logo L',   w: 48,  h: 35, color: '#2255aa', fg: '#fff' },  // Picon Querformat
     logo_s:   { label: 'Logo S',   w: 40,  h: 28, color: '#3366bb', fg: '#fff' },  // Picon Querformat klein
     activity: { label: 'Activity', w: 140, h: 13, color: '#dd7700', fg: '#fff' },  // orange, 11px×1.2
@@ -47,13 +48,18 @@ const HC_ELEM_CATALOG = {
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
 const HC_MODE_ELEMS = {
-    tv:    ['power', 'logo_l', 'logo_s', 'activity', 'channel', 'title', 'time'],
+    tv:    ['power', 'logo_xl', 'logo_l', 'logo_s', 'activity', 'channel', 'title', 'time'],
     media: ['power', 'activity', 'title', 'time'],
 };
 
-// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_l/logo_s je h)
+// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_xl/logo_l/logo_s je h)
 function hcCatalogFor(layoutKey, def) {
-    if (layoutKey === 'logo') return HC_ELEM_CATALOG[def && def.h >= 32 ? 'logo_l' : 'logo_s'];
+    if (layoutKey === 'logo') {
+        const h = (def && def.h) || 0;
+        if (h >= 45) return HC_ELEM_CATALOG.logo_xl;
+        if (h >= 32) return HC_ELEM_CATALOG.logo_l;
+        return HC_ELEM_CATALOG.logo_s;
+    }
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
 
@@ -2099,7 +2105,11 @@ class HarmonyCompanionEditor extends HTMLElement {
             const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
             const placed = layout[lKey];
             const isPlaced = placed && placed.visible &&
-                (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 32 : placed.h < 32));
+                (lKey !== 'logo' || (
+                    catalogKey === 'logo_xl' ? placed.h >= 45
+                    : catalogKey === 'logo_l' ? (placed.h >= 32 && placed.h < 45)
+                    : placed.h < 32
+                ));
             const item = document.createElement('div');
             const isIconPal = (catalogKey === 'power' || catalogKey.startsWith('logo'));
             item.style.cssText = [
@@ -2142,7 +2152,9 @@ class HarmonyCompanionEditor extends HTMLElement {
             'box-sizing:border-box;z-index:2;overflow:hidden;white-space:nowrap;',
             'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
-        const catalogKey = key === 'logo' ? (def.h >= 32 ? 'logo_l' : 'logo_s') : key;
+        const catalogKey = key === 'logo'
+            ? (def.h >= 45 ? 'logo_xl' : def.h >= 32 ? 'logo_l' : 'logo_s')
+            : key;
         if (isIcon) {
             el.innerHTML = `<span style="line-height:1.1">${cat.label}</span><span style="font-size:9px;opacity:0.8;margin-top:1px">${cat.w}×${cat.h}</span>`;
         } else {
