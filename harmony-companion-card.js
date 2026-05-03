@@ -2,8 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.5.0 (Konfigurierbare Display-Offsets (display_offset_w/h),
-//                  Burger-Menü-Element (Türkis 25x24) im Layout-Editor positionierbar)
+// Version: 4.5.1 (Default-Offset Breite 40 → 50 (Effektiv 370×147 px))
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.5.0";
+const HC_VERSION = "4.5.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -27,14 +26,14 @@ const escHtml = (str) => {
 
 // ── Layout-Editor: Raster-Konstanten ─────────────────────────────────────────
 // Basis 320×126 (CSS-Default der Display-Zone) + konfigurierbarer Offset.
-// Default-Offset: w=40, h=21 → effektiv 360×147 px Display-Fläche.
+// Default-Offset: w=50, h=21 → effektiv 370×147 px Display-Fläche.
 // Snap: 5×3 px (HC_COL_W × HC_ROW_H) bleibt konstant.
 const HC_BASE_W           = 320;
 const HC_BASE_H           = 126;
 const HC_COL_W            = 5;
 const HC_ROW_H            = 3;
 const HC_PBAR_H           = 4;
-const HC_DEFAULT_OFFSET_W = 40;
+const HC_DEFAULT_OFFSET_W = 50;
 const HC_DEFAULT_OFFSET_H = 21;
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
@@ -78,7 +77,7 @@ function hcCatalogFor(layoutKey, def) {
 // Default-Layout (alle Positionen relativ zu dispW/dispH).
 // Zeit unten-rechts: dispW-35 .. dispW (Box-Rechtsende = Display-Rand).
 function hcDefaultLayout(mode, dispW, dispH) {
-    // Default-Display: 360×147 (Basis 320×126 + Offset 40×21)
+    // Default-Display: 370×147 (Basis 320×126 + Offset 50×21)
     if (dispW === undefined) dispW = HC_BASE_W + HC_DEFAULT_OFFSET_W;
     if (dispH === undefined) dispH = HC_BASE_H + HC_DEFAULT_OFFSET_H;
     // Element-relative Positionen: rechte/untere Elemente am dispW/dispH-Rand
