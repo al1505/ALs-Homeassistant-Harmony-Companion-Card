@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.4 (Korrekte Elementbreiten, Logo 35x48, Activity orange, Zeit hellgelb,
-//                  Snap-Limit ohne Progress-Bar-Reserve — Elemente bis ganz unten platzierbar)
+// Version: 4.0.5 (Logo Querformat 48x35/40x28, Zeit-Default unten-rechts (left:200) damit
+//                  rechtsbuendiger Text am Display-Rand erscheint, top:113 ganz am Boden)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.4";
+const HC_VERSION = "4.0.5";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -34,11 +34,11 @@ const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
 // Höhen = tatsächliche Render-Höhe (font-size × 1.2 line-height), kein line-height-Trick
-// Breiten = vom Nutzer spezifizierte Werte (reale Darstellung im Display)
+// Logos im Querformat (Picons sind typisch breiter als hoch)
 const HC_ELEM_CATALOG = {
     power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
-    logo_l:   { label: 'Logo L',   w: 35,  h: 48, color: '#2255aa', fg: '#fff' },  // Picon: Hochformat
-    logo_s:   { label: 'Logo S',   w: 28,  h: 40, color: '#3366bb', fg: '#fff' },
+    logo_l:   { label: 'Logo L',   w: 48,  h: 35, color: '#2255aa', fg: '#fff' },  // Picon Querformat
+    logo_s:   { label: 'Logo S',   w: 40,  h: 28, color: '#3366bb', fg: '#fff' },  // Picon Querformat klein
     activity: { label: 'Activity', w: 140, h: 13, color: '#dd7700', fg: '#fff' },  // orange, 11px×1.2
     channel:  { label: 'Sender',   w: 140, h: 19, color: '#1a6633', fg: '#fff' },  // 16px×1.2
     title:    { label: 'Titel',    w: 120, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px×1.2
@@ -53,31 +53,33 @@ const HC_MODE_ELEMS = {
 
 // Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_l/logo_s je h)
 function hcCatalogFor(layoutKey, def) {
-    if (layoutKey === 'logo') return HC_ELEM_CATALOG[def && def.h >= 44 ? 'logo_l' : 'logo_s'];
+    if (layoutKey === 'logo') return HC_ELEM_CATALOG[def && def.h >= 32 ? 'logo_l' : 'logo_s'];
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
 
 // Standard-Layouts für v4 (absolute Positionierung, 126px Display-Höhe)
-// Logo L: 35×48px (Hochformat-Picon). Textspalte beginnt bei left:82 (40+35+7).
+// Logo L: 48×35px (Querformat-Picon). Textspalte beginnt bei left:95 (40+48+7).
 // Elementbreiten: Activity/Sender 140px, Titel/Zeit 120px.
-// Zeit ganz unten: top = 126-13 = 113 → Snap 111, Progress-Bar (4px) überlappt minimal.
+// Zeit unten-rechts: left:200, w:120 → rechte Box-Kante = 320 = Display-Rand!
+//                    Mit text-align:right + padding-right:5px endet Text bei x=315.
+// Zeit ganz unten: top:113 = HC_DISP_H - h = direkt am Display-Boden.
 function hcDefaultLayout(mode) {
     if (mode === 'tv') return {
-        power:    { left: 0,  top: 49,  w: 30,  h: 28, visible: true },  // zentriert (126-28)/2
-        logo:     { left: 40, top: 39,  w: 35,  h: 48, visible: true },  // zentriert (126-48)/2
-        activity: { left: 82, top: 3,   w: 140, h: 13, visible: true },  // oben rechts
-        channel:  { left: 82, top: 21,  w: 140, h: 19, visible: true },  // darunter
-        title:    { left: 82, top: 90,  w: 120, h: 17, visible: true },  // über Zeit
-        time:     { left: 82, top: 111, w: 120, h: 13, visible: true },  // ganz unten
+        power:    { left: 0,   top: 49,  w: 30,  h: 28, visible: true },  // zentriert
+        logo:     { left: 40,  top: 45,  w: 48,  h: 35, visible: true },  // zentriert (126-35)/2
+        activity: { left: 95,  top: 3,   w: 140, h: 13, visible: true },  // oben rechts
+        channel:  { left: 95,  top: 21,  w: 140, h: 19, visible: true },  // darunter
+        title:    { left: 95,  top: 93,  w: 120, h: 17, visible: true },  // über Zeit
+        time:     { left: 200, top: 113, w: 120, h: 13, visible: true },  // ganz unten-rechts
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
-        power:    { left: 0,  top: 49,  w: 30,  h: 28, visible: true },
+        power:    { left: 0,   top: 49,  w: 30,  h: 28, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
-        activity: { left: 40, top: 3,   w: 275, h: 13, visible: true },
-        title:    { left: 0,  top: 90,  w: 315, h: 17, visible: true },
-        time:     { left: 0,  top: 111, w: 315, h: 13, visible: true },
+        activity: { left: 40,  top: 3,   w: 275, h: 13, visible: true },
+        title:    { left: 0,   top: 93,  w: 315, h: 17, visible: true },
+        time:     { left: 200, top: 113, w: 120, h: 13, visible: true },  // ebenfalls unten-rechts
     };
 }
 
@@ -2080,7 +2082,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
             const placed = layout[lKey];
             const isPlaced = placed && placed.visible &&
-                (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 44 : placed.h < 44));
+                (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 32 : placed.h < 32));
             const item = document.createElement('div');
             const isIconPal = (catalogKey === 'power' || catalogKey.startsWith('logo'));
             item.style.cssText = [
@@ -2123,7 +2125,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             'box-sizing:border-box;z-index:2;overflow:hidden;white-space:nowrap;',
             'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
-        const catalogKey = key === 'logo' ? (def.h >= 44 ? 'logo_l' : 'logo_s') : key;
+        const catalogKey = key === 'logo' ? (def.h >= 32 ? 'logo_l' : 'logo_s') : key;
         if (isIcon) {
             el.innerHTML = `<span style="line-height:1.1">${cat.label}</span><span style="font-size:9px;opacity:0.8;margin-top:1px">${cat.w}×${cat.h}</span>`;
         } else {
