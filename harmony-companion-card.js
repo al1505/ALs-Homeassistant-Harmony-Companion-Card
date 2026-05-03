@@ -341,10 +341,10 @@ class HarmonyCompanionCard extends HTMLElement {
                     padding: 10px 48px 14px 52px; box-sizing: border-box; overflow: hidden; position: relative;
                 }
                 /* TV-Modus: alle Elemente absolut positioniert → kein Padding noetig */
-                .display-zone.tv-mode { padding: 0; min-height: 126px; }
+                .display-zone.tv-mode { padding: 0; height: 126px; }
                 #display-bg {
                     position: absolute; inset: 0; z-index: 0;
-                    background-size: auto 100%; background-position: right center;
+                    background-size: cover; background-position: center center;
                     background-repeat: no-repeat; display: none;
                     will-change: transform, opacity;
                 }
