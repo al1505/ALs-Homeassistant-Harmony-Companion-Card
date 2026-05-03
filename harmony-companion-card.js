@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.20.1 (bottom:0 fuer letzte Zeile, Zeit+Uhr Suffix, transition height fix)
+// Version: 3.21.0 (bottom:5px, Display-Layout in Enigma2, Kodi media-mode, URL-Feld+Camera entfernt)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.20.1";
+const HC_VERSION = "3.21.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -403,6 +403,14 @@ class HarmonyCompanionCard extends HTMLElement {
                 }
                 #display-progress-fill { height: 100%; width: 0%; background: rgba(255,255,255,0.85); transition: width 0.8s linear; }
                 .display-error { color: #cc0000; font-size: 13px; }
+                /* Kodi / Nicht-TV Modus: Aktivitaets-Label oben-links neben Power-Button */
+                .display-zone.media-mode #display-power {
+                    position: absolute; left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
+                }
+                .display-zone.media-mode #display-activity {
+                    position: absolute; left: 40px; top: 7px; width: 160px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0; z-index: 4;
+                }
                 /* ============================================================
                    DISPLAY LAYOUTS 1-6 (data-layout Attribut)
                    Koordinaten aus Layout-Excel: Raster 32x18, 10px/Sp, 7px/Z = 320x126px
@@ -468,7 +476,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 80px; top: 84px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
                 /* Layout 4: Power+Fernsehen oben, Logo links (60x56), Sender/Titel/Zeit rechts */
@@ -489,7 +497,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 70px; top: 70px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-time {
-                    position: absolute; left: 0; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: left; margin: 0;
+                    position: absolute; left: 0; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: left; margin: 0;
                 }
 
                 /* Layout 5: Power+Fernsehen oben, Logo links (70x70), Sender/Titel rechts, Zeit unten-rechts */
@@ -510,7 +518,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 80px; top: 77px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
                 /* Layout 6: kein Sender; Power+Fernsehen oben, Logo links, Titel+Zeit unten */
@@ -528,10 +536,10 @@ class HarmonyCompanionCard extends HTMLElement {
                     display: none !important;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-title {
-                    position: absolute; left: 0; bottom: 0; top: auto; width: 200px; line-height: 14px; margin: 0;
+                    position: absolute; left: 0; bottom: 5px; top: auto; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 0; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
                 .match-zone {
                     min-height: 38px; min-width: 38px;
@@ -1279,8 +1287,10 @@ class HarmonyCompanionCard extends HTMLElement {
         // TV-Modus-Klasse: Logo links, groesseres Padding-Left fuer Text-Spalte.
         // Immer aktiv wenn TV-Aktivitaet und playing – auch ohne Logo-Bild
         // (Fallback-TV-Icon wird angezeigt).
-        const useTVLayout = isTVAct && isPlaying;
-        display.classList.toggle('tv-mode', useTVLayout);
+        const useTVLayout    = isTVAct && isPlaying;
+        const useMediaMode   = !isTVAct && isPlaying;
+        display.classList.toggle('tv-mode',    useTVLayout);
+        display.classList.toggle('media-mode', useMediaMode);
 
         // ---- Restzeit-Anzeige (1h 34m bis 21:35) ----
         // Quellen: OpenWebIF endStr ODER HA-Entity media_duration/_position
@@ -1872,7 +1882,6 @@ class HarmonyCompanionEditor extends HTMLElement {
             }
             root.appendChild(this._sectionHub());
             root.appendChild(this._sectionEnigma2());
-            root.appendChild(this._sectionLayout());
             root.appendChild(this._sectionSlots('act', 'Aktivitaeten-Slots (Hauptbereich)'));
             root.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));
             root.appendChild(this._sectionButtons());
@@ -2057,15 +2066,6 @@ class HarmonyCompanionEditor extends HTMLElement {
             )
         ));
 
-        // URL-Feld (fuer Grab-Bild + optionaler Direkt-Fetch)
-        const urlField = document.createElement('ha-textfield');
-        urlField.label = 'OpenWebIF URL (optional – wird aus Sensor abgeleitet wenn leer)';
-        urlField.helper = 'z.B. http://192.168.1.100  –  Leer lassen wenn enigma2_entity gesetzt ist';
-        urlField.helperPersistent = true;
-        urlField.style.cssText = 'width:100%; margin-top:8px; display:block;';
-        urlField.value = this._config.enigma2_url || '';
-        urlField.onchange = (e) => this._patchTop('enigma2_url', e.target.value.trim() || undefined);
-        body.appendChild(urlField);
 
         // Grab-Bild Aktualisierungsintervall
         const grabIntRow = document.createElement('div');
@@ -2110,6 +2110,7 @@ class HarmonyCompanionEditor extends HTMLElement {
                 body.appendChild(row);
             });
         }
+        body.appendChild(this._sectionLayout());
         return det;
     }
 
@@ -2234,21 +2235,12 @@ class HarmonyCompanionEditor extends HTMLElement {
         // Media-Entity + Camera-Entity fuer diese Aktivitaet (nur bei nicht-globalem Kontext)
         if (this._currentContext !== 'global') {
             const mediaEntityId  = (this._config.activity_media  && this._config.activity_media[this._currentContext])  || '';
-            const cameraEntityId = (this._config.activity_camera && this._config.activity_camera[this._currentContext]) || '';
             body.appendChild(this._labeled(
                 'Media-Entity fuer diese Aktivitaet (optional)',
                 this._haSelector(
                     { entity: { domain: 'media_player' } },
                     mediaEntityId,
                     (v) => this._patchActivityMedia(this._currentContext, v || '')
-                )
-            ));
-            body.appendChild(this._labeled(
-                'Camera-Entity fuer Live-Stream (Drei-Punkte-Button)',
-                this._haSelector(
-                    { entity: { domain: 'camera' } },
-                    cameraEntityId,
-                    (v) => this._patchActivityCamera(this._currentContext, v || '')
                 )
             ));
         }
