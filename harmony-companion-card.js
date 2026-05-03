@@ -2,7 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.4.1 (Element-Groessen aktualisiert: Activity 80x9, Sender 160x18, Titel 200x15)
+// Version: 4.5.0 (Konfigurierbare Display-Offsets (display_offset_w/h),
+//                  Burger-Menü-Element (Türkis 25x24) im Layout-Editor positionierbar)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.4.1";
+const HC_VERSION = "4.5.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -25,19 +26,23 @@ const escHtml = (str) => {
 };
 
 // ── Layout-Editor: Raster-Konstanten ─────────────────────────────────────────
-// +20px Offset gegenüber der minimal sichtbaren Display-Zone (320×126) damit
-// Elemente am rechten und unteren Rand auch tatsächlich am sichtbaren Rand erscheinen.
-const HC_GRID_COLS = 68, HC_COL_W = 5;    // 68 Spalten à 5 px = 340 px
-const HC_GRID_ROWS = 49, HC_ROW_H = 3;    // 49 Zeilen  à  3 px = 147 px
-const HC_PBAR_H    = 4;                   // Progress-Bar Höhe (px)
-const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 340 px
-const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 147 px
+// Basis 320×126 (CSS-Default der Display-Zone) + konfigurierbarer Offset.
+// Default-Offset: w=40, h=21 → effektiv 360×147 px Display-Fläche.
+// Snap: 5×3 px (HC_COL_W × HC_ROW_H) bleibt konstant.
+const HC_BASE_W           = 320;
+const HC_BASE_H           = 126;
+const HC_COL_W            = 5;
+const HC_ROW_H            = 3;
+const HC_PBAR_H           = 4;
+const HC_DEFAULT_OFFSET_W = 40;
+const HC_DEFAULT_OFFSET_H = 21;
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
 // Höhen = tatsächliche Render-Höhe (font-size × 1.2 line-height), kein line-height-Trick
 // Logos im Querformat (Picons sind typisch breiter als hoch)
 const HC_ELEM_CATALOG = {
     power:    { label: 'Power',    w: 25,  h: 24, color: '#b52929', fg: '#fff' },
+    menu:     { label: 'Menü',     w: 25,  h: 24, color: '#16a085', fg: '#fff' },  // Türkis Burger ⋮
     logo_xl:  { label: 'Logo XL',  w: 70,  h: 48, color: '#1a3a99', fg: '#fff' },  // Picon groß
     logo_l:   { label: 'Logo L',   w: 60,  h: 36, color: '#2255aa', fg: '#fff' },
     logo_m:   { label: 'Logo M',   w: 50,  h: 33, color: '#3366bb', fg: '#fff' },  // Picon mittel (neu)
@@ -51,8 +56,8 @@ const HC_ELEM_CATALOG = {
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
 const HC_MODE_ELEMS = {
-    tv:    ['power', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
-    media: ['power', 'activity', 'title', 'time', 'timespan'],
+    tv:    ['power', 'menu', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
+    media: ['power', 'menu', 'activity', 'title', 'time', 'timespan'],
 };
 
 // Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → xl/l/m/s je h)
@@ -70,31 +75,41 @@ function hcCatalogFor(layoutKey, def) {
 // Standard-Layouts für v4 (absolute Positionierung, 126px Display-Höhe)
 // Logo L: 48×35px (Querformat-Picon). Textspalte beginnt bei left:95 (40+48+7).
 // Elementbreiten: Activity/Sender 140px, Titel/Zeit 120px.
-// Zeit unten-rechts: left:200, w:120 → rechte Box-Kante = 320 = Display-Rand!
-//                    Mit text-align:right + padding-right:5px endet Text bei x=315.
-// Zeit ganz unten: top:113 = HC_DISP_H - h = direkt am Display-Boden.
-function hcDefaultLayout(mode) {
-    // Display 340×147 px (mit +20px Offset gegenüber 320×126)
+// Default-Layout (alle Positionen relativ zu dispW/dispH).
+// Zeit unten-rechts: dispW-35 .. dispW (Box-Rechtsende = Display-Rand).
+function hcDefaultLayout(mode, dispW, dispH) {
+    // Default-Display: 360×147 (Basis 320×126 + Offset 40×21)
+    if (dispW === undefined) dispW = HC_BASE_W + HC_DEFAULT_OFFSET_W;
+    if (dispH === undefined) dispH = HC_BASE_H + HC_DEFAULT_OFFSET_H;
+    // Element-relative Positionen: rechte/untere Elemente am dispW/dispH-Rand
+    const yMid24 = Math.round((dispH - 24) / 2);   // Power (h:24)
+    const yMid36 = Math.round((dispH - 36) / 2);   // Logo L (h:36)
+    const yBot   = dispH - 9;                       // Zeit/Beg-End (h:9)
+    const yTitle = yBot - 15 - 6;                   // Titel (h:15) mit 6px Abstand zu Zeit
+    const xZeit  = dispW - 35;                      // Zeit rechtsbündig (w:35)
+    const xSpan  = xZeit - 5 - 65;                  // Beg-End vor Zeit (5px Abstand, w:65)
+
+    const xMenu = dispW - 25;  // Menü oben-rechts
     if (mode === 'tv') return {
-        power:    { left: 0,   top: 60,  w: 25,  h: 24, visible: true },  // zentriert (147-24)/2≈61
-        logo:     { left: 30,  top: 54,  w: 60,  h: 36, visible: true },  // Logo L, (147-36)/2≈55
-        activity: { left: 95,  top: 3,   w: 80,  h: 9,  visible: true },
-        channel:  { left: 95,  top: 15,  w: 160, h: 18, visible: true },  // top:15 = 3+9+3 (3px Abstand zu Activity)
-        title:    { left: 95,  top: 117, w: 200, h: 15, visible: true },  // über Zeit/Beg-End
-        // Zeit unten-rechts: left+w = 305+35 = 340 (Display-Rand)
-        time:     { left: 305, top: 138, w: 35,  h: 9,  visible: true },
-        // Beg-End links neben Zeit (5px Abstand): 305-5-65 = 235
-        timespan: { left: 235, top: 138, w: 65,  h: 9,  visible: true },
+        power:    { left: 0,     top: yMid24, w: 25,  h: 24, visible: true },
+        menu:     { left: xMenu, top: 0,      w: 25,  h: 24, visible: true },  // Burger oben-rechts
+        logo:     { left: 30,    top: yMid36, w: 60,  h: 36, visible: true },  // Logo L
+        activity: { left: 95,    top: 3,      w: 80,  h: 9,  visible: true },
+        channel:  { left: 95,    top: 15,     w: 160, h: 18, visible: true },
+        title:    { left: 95,    top: yTitle, w: 200, h: 15, visible: true },
+        time:     { left: xZeit, top: yBot,   w: 35,  h: 9,  visible: true },
+        timespan: { left: xSpan, top: yBot,   w: 65,  h: 9,  visible: true },
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
-        power:    { left: 0,   top: 60,  w: 25,  h: 24, visible: true },
+        power:    { left: 0,     top: yMid24,    w: 25,  h: 24, visible: true },
+        menu:     { left: xMenu, top: 0,         w: 25,  h: 24, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
-        activity: { left: 35,  top: 3,   w: 80,  h: 9,  visible: true },
-        title:    { left: 0,   top: 117, w: 335, h: 15, visible: true },
-        time:     { left: 305, top: 138, w: 35,  h: 9,  visible: true },
-        timespan: { left: 235, top: 138, w: 65,  h: 9,  visible: true },
+        activity: { left: 35,    top: 3,         w: 80,  h: 9,  visible: true },
+        title:    { left: 0,     top: yTitle,    w: dispW - 25, h: 15, visible: true },
+        time:     { left: xZeit, top: yBot,      w: 35,  h: 9,  visible: true },
+        timespan: { left: xSpan, top: yBot,      w: 65,  h: 9,  visible: true },
     };
 }
 
@@ -161,6 +176,16 @@ const HARMONY_FALLBACKS = {
 // CARD KLASSE
 // ============================================================================
 class HarmonyCompanionCard extends HTMLElement {
+    // Effektive Display-Dimensionen aus Config-Offset (oder Defaults)
+    get _dispW() {
+        const o = this.config && Number(this.config.display_offset_w);
+        return HC_BASE_W + (Number.isFinite(o) ? o : HC_DEFAULT_OFFSET_W);
+    }
+    get _dispH() {
+        const o = this.config && Number(this.config.display_offset_h);
+        return HC_BASE_H + (Number.isFinite(o) ? o : HC_DEFAULT_OFFSET_H);
+    }
+
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
@@ -414,9 +439,9 @@ class HarmonyCompanionCard extends HTMLElement {
                     transition: opacity 0.3s ease, height 0.3s ease;
                     padding: 10px 48px 14px 52px; box-sizing: border-box; overflow: hidden; position: relative;
                 }
-                /* TV-Modus: alle Elemente absolut positioniert → kein Padding noetig.
-                   Höhe 147px (statt 126) damit Elemente am unteren Rand wirklich am sichtbaren Rand sind. */
-                .display-zone.tv-mode { padding: 0; height: 147px !important; }
+                /* TV-Modus: alle Elemente absolut positioniert.
+                   Höhe wird per JS dynamisch via inline-Style gesetzt (display_offset_h). */
+                .display-zone.tv-mode { padding: 0; height: 147px; }
                 #display-bg {
                     position: absolute; inset: 0; z-index: 0;
                     background-size: cover; background-position: center center;
@@ -1619,7 +1644,7 @@ class HarmonyCompanionCard extends HTMLElement {
     _clearDisplayLayout(display) {
         const props = ['position','left','top','right','bottom','transform',
                        'width','height','lineHeight','margin','zIndex','overflow'];
-        ['display-power','display-logo','display-activity',
+        ['display-power','display-dots','display-logo','display-activity',
          'display-channel','display-title','display-time','display-timespan'].forEach(id => {
             const el = display.querySelector('#' + id);
             if (!el) return;
@@ -1631,13 +1656,16 @@ class HarmonyCompanionCard extends HTMLElement {
     _applyDisplayLayout(display, mode) {
         const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
         const stored = (this.config && this.config[cfgKey]) || {};
-        const defs   = hcDefaultLayout(mode);
+        const dispW  = this._dispW, dispH = this._dispH;
+        const defs   = hcDefaultLayout(mode, dispW, dispH);
         const layout = {};
         new Set([...Object.keys(defs), ...Object.keys(stored)])
             .forEach(k => { layout[k] = { ...(defs[k] || {}), ...(stored[k] || {}) }; });
+        // Display-Höhe dynamisch via inline-Style (override CSS)
+        display.style.setProperty('height', dispH + 'px', 'important');
 
         const idMap = {
-            power: 'display-power', logo: 'display-logo',
+            power: 'display-power', menu: 'display-dots', logo: 'display-logo',
             activity: 'display-activity', channel: 'display-channel',
             title: 'display-title', time: 'display-time', timespan: 'display-timespan',
         };
@@ -1645,13 +1673,13 @@ class HarmonyCompanionCard extends HTMLElement {
             const el = display.querySelector('#' + (idMap[key] || ''));
             if (!el) return;
             if (def.visible === false) { el.style.display = 'none'; return; }
-            const isIcon = (key === 'logo' || key === 'power');
+            const isIcon = (key === 'logo' || key === 'power' || key === 'menu');
             const w = def.w || 30;
             const h = def.h || 14;
             // KEIN Anker-Wechsel mehr: immer top/left → keine Sprünge beim Verschieben.
             // Element-Mittelpunkt nur für Text-Ausrichtungs-Logik (rechtsbündig wenn rechts platziert).
             const cx = (def.left || 0) + w / 2;
-            const inRightArea = cx > HC_DISP_W * 0.5;
+            const inRightArea = cx > dispW * 0.5;
 
             el.style.position  = 'absolute';
             el.style.left      = (def.left || 0) + 'px';
@@ -1693,6 +1721,16 @@ customElements.define('harmony-companion-card', HarmonyCompanionCard);
 // GUI EDITOR
 // ============================================================================
 class HarmonyCompanionEditor extends HTMLElement {
+    // Effektive Display-Dimensionen aus Config-Offset (oder Defaults)
+    get _dispW() {
+        const o = this._config && Number(this._config.display_offset_w);
+        return HC_BASE_W + (Number.isFinite(o) ? o : HC_DEFAULT_OFFSET_W);
+    }
+    get _dispH() {
+        const o = this._config && Number(this._config.display_offset_h);
+        return HC_BASE_H + (Number.isFinite(o) ? o : HC_DEFAULT_OFFSET_H);
+    }
+
     constructor() {
         super();
         this._config = {};
@@ -1974,6 +2012,40 @@ class HarmonyCompanionEditor extends HTMLElement {
         const { det, body } = this._details('sec-layout', 'Display-Layout');
         const S = this._leScale;
 
+        // Display-Offset Konfiguration
+        const offsetRow = document.createElement('div');
+        offsetRow.style.cssText = 'display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap;';
+        const mkOffset = (label, key, defVal) => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+            const lbl = document.createElement('label');
+            lbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);';
+            lbl.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '0'; input.max = '200'; input.step = '1';
+            input.value = (this._config && this._config[key] !== undefined) ? this._config[key] : defVal;
+            input.style.cssText = 'width:80px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+            input.onchange = (e) => {
+                const v = parseInt(e.target.value, 10);
+                if (Number.isFinite(v) && v >= 0) {
+                    this._patchTop(key, v);
+                    this._leLayouts = {};   // Reset Editor-State (Defaults neu berechnen)
+                    this._buildDOM();
+                }
+            };
+            wrap.appendChild(lbl);
+            wrap.appendChild(input);
+            return wrap;
+        };
+        offsetRow.appendChild(mkOffset('Display-Offset Breite (px)',  'display_offset_w', HC_DEFAULT_OFFSET_W));
+        offsetRow.appendChild(mkOffset('Display-Offset Höhe (px)',    'display_offset_h', HC_DEFAULT_OFFSET_H));
+        const offInfo = document.createElement('div');
+        offInfo.style.cssText = 'font-size:11px;color:var(--secondary-text-color);font-style:italic;';
+        offInfo.textContent = 'Verschiebt die rechte/untere Display-Grenze. Basis: 320×126 px.';
+        offsetRow.appendChild(offInfo);
+        body.appendChild(offsetRow);
+
         // Tabs TV / Kodi
         const tabBar = document.createElement('div');
         tabBar.style.cssText = 'display:flex;gap:8px;margin-bottom:12px;';
@@ -1991,11 +2063,12 @@ class HarmonyCompanionEditor extends HTMLElement {
 
         const mode = this._leMode;
         if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const dispW = this._dispW, dispH = this._dispH;
 
-        // Grid (2× vergrößert: 640×252 px)
+        // Grid (2× vergrößert)
         const grid = document.createElement('div');
         grid.style.cssText = [
-            `width:${HC_DISP_W * S}px;height:${HC_DISP_H * S}px;`,
+            `width:${dispW * S}px;height:${dispH * S}px;`,
             'position:relative;overflow:hidden;',
             'background:#1a1a2e;',
             `background-image:linear-gradient(rgba(255,255,255,0.13) 1px,transparent 1px),`,
@@ -2032,8 +2105,8 @@ class HarmonyCompanionEditor extends HTMLElement {
         grid.addEventListener('pointermove', (e) => {
             if (this._leDrag) return;
             const r = grid.getBoundingClientRect();
-            const gx = Math.max(0, Math.min(HC_DISP_W, Math.round((e.clientX - r.left) / (HC_COL_W * S)) * HC_COL_W));
-            const gy = Math.max(0, Math.min(HC_DISP_H, Math.round((e.clientY - r.top)  / (HC_ROW_H * S)) * HC_ROW_H));
+            const gx = Math.max(0, Math.min(this._dispW, Math.round((e.clientX - r.left) / (HC_COL_W * S)) * HC_COL_W));
+            const gy = Math.max(0, Math.min(this._dispH, Math.round((e.clientY - r.top)  / (HC_ROW_H * S)) * HC_ROW_H));
             coordTip.textContent = 'x: ' + gx + 'px  y: ' + gy + 'px';
         });
         grid.addEventListener('pointerleave', () => { if (!this._leDrag) coordTip.textContent = ''; });
@@ -2067,7 +2140,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         btnReset.textContent = 'Zurücksetzen';
         btnReset.style.cssText = 'padding:6px 12px;border-radius:6px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;background:transparent;color:inherit;';
         btnReset.onclick = () => {
-            this._leLayouts[mode] = hcDefaultLayout(mode);
+            this._leLayouts[mode] = hcDefaultLayout(mode, this._dispW, this._dispH);
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
         };
@@ -2101,7 +2174,7 @@ class HarmonyCompanionEditor extends HTMLElement {
     _leLoadLayout(mode) {
         const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
         const stored = this._config && this._config[cfgKey];
-        const def = hcDefaultLayout(mode);
+        const def = hcDefaultLayout(mode, this._dispW, this._dispH);
         if (!stored) return def;
         const merged = { ...def };
         Object.keys(stored).forEach(k => { merged[k] = { ...(def[k] || {}), ...stored[k] }; });
@@ -2168,7 +2241,7 @@ class HarmonyCompanionEditor extends HTMLElement {
                     : placed.h < 30
                 ));
             const item = document.createElement('div');
-            const isIconPal = (catalogKey === 'power' || catalogKey.startsWith('logo'));
+            const isIconPal = (catalogKey === 'power' || catalogKey === 'menu' || catalogKey.startsWith('logo'));
             item.style.cssText = [
                 'padding:4px 10px;border-radius:5px;border:1px solid rgba(255,255,255,0.25);',
                 `background:${cat.color};color:${cat.fg};`,
@@ -2187,12 +2260,12 @@ class HarmonyCompanionEditor extends HTMLElement {
 
     _leCreateEl(key, def, cat, mode) {
         const S = this._leScale;
-        const isIcon   = (key === 'power' || key === 'logo');
+        const isIcon   = (key === 'power' || key === 'logo' || key === 'menu');
         const isTime   = (key === 'time');
         const w = def.w || cat.w;
         const h = def.h || cat.h;
         // Zeit: rechtsbündig wenn rechts im Display platziert (> 55% der Breite)
-        const timeRight = isTime && (def.left + w > HC_DISP_W * 0.55);
+        const timeRight = isTime && (def.left + w > this._dispW * 0.55);
         const align = isIcon ? 'center' : (timeRight ? 'flex-end' : 'flex-start');
         const pad   = isIcon ? '' : (timeRight ? 'padding-right:10px;' : 'padding-left:10px;');
         const el = document.createElement('div');
@@ -2263,8 +2336,8 @@ class HarmonyCompanionEditor extends HTMLElement {
         const startY = e.clientY;
         const minW   = HC_COL_W * 2;   // 10px
         const minH   = HC_ROW_H * 2;   // 6px
-        const maxW   = HC_DISP_W - def.left;
-        const maxH   = HC_DISP_H - def.top;
+        const maxW   = this._dispW - def.left;
+        const maxH   = this._dispH - def.top;
 
         const labelEl = el.querySelector('.le-el-label');
         const isIcon  = (key === 'power' || key === 'logo');
@@ -2339,12 +2412,13 @@ class HarmonyCompanionEditor extends HTMLElement {
             const gr = grid.getBoundingClientRect();
             const relX = ev.clientX - gr.left - offsetX;
             const relY = ev.clientY - gr.top  - offsetY;
-            const inGrid = relX > -dragW * S * 0.5 && relX < HC_DISP_W * S - dragW * S * 0.5 &&
-                           relY > -dragH * S * 0.5 && relY < HC_DISP_H * S - dragH * S * 0.5;
+            const dispW = this._dispW, dispH = this._dispH;
+            const inGrid = relX > -dragW * S * 0.5 && relX < dispW * S - dragW * S * 0.5 &&
+                           relY > -dragH * S * 0.5 && relY < dispH * S - dragH * S * 0.5;
             const sp = this._leSnapPrev;
             if (inGrid && sp) {
-                const sl = Math.max(0, Math.min(HC_DISP_W - dragW, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-                const st = Math.max(0, Math.min(HC_DISP_H - dragH, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+                const sl = Math.max(0, Math.min(dispW - dragW, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
+                const st = Math.max(0, Math.min(dispH - dragH, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
                 sp.style.display = 'block';
                 sp.style.left    = (sl * S) + 'px';
                 sp.style.top     = (st * S) + 'px';
@@ -2383,11 +2457,12 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
         const layout = { ...this._leLayouts[mode] };
 
-        const inGrid = relX > -w * S * 0.5 && relX < HC_DISP_W * S - w * S * 0.5 &&
-                       relY > -h * S * 0.5 && relY < HC_DISP_H * S - h * S * 0.5;
+        const dispW = this._dispW, dispH = this._dispH;
+        const inGrid = relX > -w * S * 0.5 && relX < dispW * S - w * S * 0.5 &&
+                       relY > -h * S * 0.5 && relY < dispH * S - h * S * 0.5;
         if (inGrid) {
-            const left = Math.max(0, Math.min(HC_DISP_W - w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-            const top  = Math.max(0, Math.min(HC_DISP_H - h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+            const left = Math.max(0, Math.min(dispW - w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
+            const top  = Math.max(0, Math.min(dispH - h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
             layout[layoutKey] = { left, top, w, h, visible: true };
         } else {
             delete layout[layoutKey];
