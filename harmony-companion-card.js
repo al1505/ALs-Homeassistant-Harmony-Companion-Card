@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.7 (Logo XL hinzugefuegt: 50x50px (Quadrat). Drei Logo-Groessen jetzt:
-//                  Logo XL 50x50, Logo L 48x35 (Quer), Logo S 40x28 (Quer))
+// Version: 4.1.0 (Resize: Elemente in Editor an unterer rechter Ecke ziehbar zum Größe ändern,
+//                  Verschieben behält Größe, Resize-Snap auf Grid 5x3 px)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.7";
+const HC_VERSION = "4.1.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2007,7 +2007,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         // Palette
         const palLbl = document.createElement('div');
         palLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:10px;margin-bottom:6px;';
-        palLbl.textContent = 'Auf das Raster ziehen · vom Raster wegziehen zum Entfernen:';
+        palLbl.textContent = 'Auf das Raster ziehen · weiße Ecke unten-rechts zum Größe ändern · vom Raster ziehen = entfernen:';
         body.appendChild(palLbl);
 
         const palette = document.createElement('div');
@@ -2073,14 +2073,16 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!grid) return;
         const layout = this._leLayouts[mode] || {};
         const els = [...grid.querySelectorAll('.le-el')];
-        // Rechtecke aus gespeichertem Layout ermitteln
+        // Rechtecke aus gespeichertem Layout ermitteln (def.w/def.h für resize-fähige Größen)
         const rects = els.map(el => {
             const key = el.dataset.key;
             const def = layout[key];
             if (!def) return null;
             const cat = hcCatalogFor(key, def);
             if (!cat) return null;
-            return { el, x1: def.left, y1: def.top, x2: def.left + cat.w, y2: def.top + cat.h };
+            const w = def.w || cat.w;
+            const h = def.h || cat.h;
+            return { el, x1: def.left, y1: def.top, x2: def.left + w, y2: def.top + h };
         }).filter(Boolean);
         // Reset
         els.forEach(el => { el.style.border = '1px solid rgba(255,255,255,0.3)'; });
@@ -2132,8 +2134,10 @@ class HarmonyCompanionEditor extends HTMLElement {
         const S = this._leScale;
         const isIcon   = (key === 'power' || key === 'logo');
         const isTime   = (key === 'time');
+        const w = def.w || cat.w;
+        const h = def.h || cat.h;
         // Zeit: rechtsbündig wenn rechts im Display platziert (> 55% der Breite)
-        const timeRight = isTime && (def.left + cat.w > HC_DISP_W * 0.55);
+        const timeRight = isTime && (def.left + w > HC_DISP_W * 0.55);
         const align = isIcon ? 'center' : (timeRight ? 'flex-end' : 'flex-start');
         const pad   = isIcon ? '' : (timeRight ? 'padding-right:10px;' : 'padding-left:10px;');
         const el = document.createElement('div');
@@ -2142,7 +2146,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         el.style.cssText = [
             'position:absolute;',
             `left:${def.left * S}px;top:${def.top * S}px;`,
-            `width:${cat.w * S}px;height:${cat.h * S}px;`,
+            `width:${w * S}px;height:${h * S}px;`,
             `background:${cat.color};color:${cat.fg};`,
             'font-size:10px;font-weight:700;',
             `display:flex;align-items:center;justify-content:${align};`,
@@ -2153,18 +2157,100 @@ class HarmonyCompanionEditor extends HTMLElement {
             'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
         const catalogKey = key === 'logo'
-            ? (def.h >= 45 ? 'logo_xl' : def.h >= 32 ? 'logo_l' : 'logo_s')
+            ? (h >= 45 ? 'logo_xl' : h >= 32 ? 'logo_l' : 'logo_s')
             : key;
+        // Label als separates Kind, damit Resize-Handle nicht überschrieben wird
+        const labelEl = document.createElement('div');
+        labelEl.className = 'le-el-label';
+        labelEl.style.pointerEvents = 'none';
         if (isIcon) {
-            el.innerHTML = `<span style="line-height:1.1">${cat.label}</span><span style="font-size:9px;opacity:0.8;margin-top:1px">${cat.w}×${cat.h}</span>`;
+            labelEl.innerHTML = `<div style="line-height:1.1">${cat.label}</div><div style="font-size:9px;opacity:0.8;margin-top:1px">${w}×${h}</div>`;
         } else {
-            el.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
+            labelEl.textContent = cat.label + ' ' + w + '×' + h;
         }
+        el.appendChild(labelEl);
+        // Resize-Handle in unterer rechter Ecke
+        const resizeH = document.createElement('div');
+        resizeH.className = 'le-el-resize';
+        resizeH.style.cssText = [
+            'position:absolute;right:0;bottom:0;width:12px;height:12px;',
+            'background:rgba(255,255,255,0.85);',
+            'border-left:1px solid rgba(0,0,0,0.5);border-top:1px solid rgba(0,0,0,0.5);',
+            'cursor:nwse-resize;z-index:10;touch-action:none;',
+            'box-sizing:border-box;',
+        ].join('');
+        resizeH.title = 'Größe ändern';
+        resizeH.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._leStartResize(e, key, el, mode);
+        });
+        el.appendChild(resizeH);
+        // Drag-Handler auf das Element selbst
         el.addEventListener('pointerdown', (e) => {
+            if (e.target === resizeH) return;  // Resize hat Vorrang
             e.preventDefault();
             this._leStartDrag(e, catalogKey, el, mode);
         });
         return el;
+    }
+
+    _leStartResize(e, key, el, mode) {
+        const S = this._leScale;
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode];
+        const def = layout[key];
+        if (!def) return;
+        const cat0 = hcCatalogFor(key, def);
+        const startW = def.w || (cat0 && cat0.w) || 30;
+        const startH = def.h || (cat0 && cat0.h) || 14;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const minW   = HC_COL_W * 2;   // 10px
+        const minH   = HC_ROW_H * 2;   // 6px
+        const maxW   = HC_DISP_W - def.left;
+        const maxH   = HC_DISP_H - def.top;
+
+        const labelEl = el.querySelector('.le-el-label');
+        const isIcon  = (key === 'power' || key === 'logo');
+
+        const calcSize = (ev) => {
+            const dx = (ev.clientX - startX) / S;
+            const dy = (ev.clientY - startY) / S;
+            const w = Math.max(minW, Math.min(maxW, Math.round((startW + dx) / HC_COL_W) * HC_COL_W));
+            const h = Math.max(minH, Math.min(maxH, Math.round((startH + dy) / HC_ROW_H) * HC_ROW_H));
+            return { w, h };
+        };
+
+        const updateLabel = (w, h) => {
+            const cat = hcCatalogFor(key, { ...def, h });
+            if (!cat || !labelEl) return;
+            if (isIcon) {
+                labelEl.innerHTML = `<div style="line-height:1.1">${cat.label}</div><div style="font-size:9px;opacity:0.8;margin-top:1px">${w}×${h}</div>`;
+            } else {
+                labelEl.textContent = cat.label + ' ' + w + '×' + h;
+            }
+        };
+
+        const onMove = (ev) => {
+            const { w, h } = calcSize(ev);
+            el.style.width  = (w * S) + 'px';
+            el.style.height = (h * S) + 'px';
+            updateLabel(w, h);
+            if (this._leCoordTip) this._leCoordTip.textContent = '↔ ' + w + 'px × ' + h + 'px';
+        };
+        const onUp = (ev) => {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup',   onUp);
+            const { w, h } = calcSize(ev);
+            layout[key] = { ...def, w, h };
+            this._leLayouts[mode] = layout;
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+            if (this._leCoordTip) this._leCoordTip.textContent = '';
+        };
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup',   onUp);
     }
 
     _leStartDrag(e, catalogKey, sourceEl, mode) {
@@ -2172,11 +2258,24 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!cat) return;
         const S = this._leScale;
 
-        // Offset: Mitte des Elements als Ankerpunkt
-        const offsetX = cat.w * S / 2;
-        const offsetY = cat.h * S / 2;
+        // Drag aus Grid (verschiebbares Element) → bestehende Größe behalten
+        // Drag aus Palette → Katalog-Defaults verwenden
+        const isFromGrid = sourceEl && sourceEl.classList && sourceEl.classList.contains('le-el');
+        let dragW = cat.w, dragH = cat.h;
+        if (isFromGrid) {
+            const layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+            const existing  = this._leLayouts[mode] && this._leLayouts[mode][layoutKey];
+            if (existing && existing.visible !== false) {
+                dragW = existing.w || cat.w;
+                dragH = existing.h || cat.h;
+            }
+        }
 
-        this._leDrag = { catalogKey, offsetX, offsetY, mode };
+        // Offset: Mitte des Elements als Ankerpunkt
+        const offsetX = dragW * S / 2;
+        const offsetY = dragH * S / 2;
+
+        this._leDrag = { catalogKey, offsetX, offsetY, mode, w: dragW, h: dragH };
 
         const grid = this._leGridEl;
 
@@ -2185,17 +2284,17 @@ class HarmonyCompanionEditor extends HTMLElement {
             const gr = grid.getBoundingClientRect();
             const relX = ev.clientX - gr.left - offsetX;
             const relY = ev.clientY - gr.top  - offsetY;
-            const inGrid = relX > -cat.w * S * 0.5 && relX < HC_DISP_W * S - cat.w * S * 0.5 &&
-                           relY > -cat.h * S * 0.5 && relY < HC_DISP_H * S - cat.h * S * 0.5;
+            const inGrid = relX > -dragW * S * 0.5 && relX < HC_DISP_W * S - dragW * S * 0.5 &&
+                           relY > -dragH * S * 0.5 && relY < HC_DISP_H * S - dragH * S * 0.5;
             const sp = this._leSnapPrev;
             if (inGrid && sp) {
-                const sl = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-                const st = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+                const sl = Math.max(0, Math.min(HC_DISP_W - dragW, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
+                const st = Math.max(0, Math.min(HC_DISP_H - dragH, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
                 sp.style.display = 'block';
                 sp.style.left    = (sl * S) + 'px';
                 sp.style.top     = (st * S) + 'px';
-                sp.style.width   = (cat.w * S) + 'px';
-                sp.style.height  = (cat.h * S) + 'px';
+                sp.style.width   = (dragW * S) + 'px';
+                sp.style.height  = (dragH * S) + 'px';
                 if (this._leCoordTip) this._leCoordTip.textContent = '→ x: ' + sl + 'px  y: ' + st + 'px';
             } else {
                 if (sp) sp.style.display = 'none';
@@ -2206,7 +2305,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             document.removeEventListener('pointermove', onMove);
             document.removeEventListener('pointerup',   onUp);
             if (this._leSnapPrev) this._leSnapPrev.style.display = 'none';
-            this._leDrop(ev, catalogKey, offsetX, offsetY, mode);
+            this._leDrop(ev, catalogKey, offsetX, offsetY, mode, dragW, dragH);
             this._leDrag = null;
             if (this._leCoordTip) this._leCoordTip.textContent = '';
         };
@@ -2214,7 +2313,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         document.addEventListener('pointerup',   onUp);
     }
 
-    _leDrop(e, catalogKey, offsetX, offsetY, mode) {
+    _leDrop(e, catalogKey, offsetX, offsetY, mode, dragW, dragH) {
         const grid = this._leGridEl;
         if (!grid) return;
         const cat       = HC_ELEM_CATALOG[catalogKey];
@@ -2223,16 +2322,18 @@ class HarmonyCompanionEditor extends HTMLElement {
         const gr        = grid.getBoundingClientRect();
         const relX      = e.clientX - gr.left - offsetX;
         const relY      = e.clientY - gr.top  - offsetY;
+        const w         = dragW || cat.w;
+        const h         = dragH || cat.h;
 
         if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
         const layout = { ...this._leLayouts[mode] };
 
-        const inGrid = relX > -cat.w * S * 0.5 && relX < HC_DISP_W * S - cat.w * S * 0.5 &&
-                       relY > -cat.h * S * 0.5 && relY < HC_DISP_H * S - cat.h * S * 0.5;
+        const inGrid = relX > -w * S * 0.5 && relX < HC_DISP_W * S - w * S * 0.5 &&
+                       relY > -h * S * 0.5 && relY < HC_DISP_H * S - h * S * 0.5;
         if (inGrid) {
-            const left = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-            const top  = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
-            layout[layoutKey] = { left, top, w: cat.w, h: cat.h, visible: true };
+            const left = Math.max(0, Math.min(HC_DISP_W - w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
+            const top  = Math.max(0, Math.min(HC_DISP_H - h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+            layout[layoutKey] = { left, top, w, h, visible: true };
         } else {
             delete layout[layoutKey];
         }
