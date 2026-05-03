@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.3 (Default-Layout v4: Zeit ganz unten, echte Font-Höhen statt line-height-Trick,
-//                  Textelemente height:auto + lineHeight:1.2 in _applyDisplayLayout)
+// Version: 4.0.4 (Korrekte Elementbreiten, Logo 35x48, Activity orange, Zeit hellgelb,
+//                  Snap-Limit ohne Progress-Bar-Reserve — Elemente bis ganz unten platzierbar)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.3";
+const HC_VERSION = "4.0.4";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -33,15 +33,16 @@ const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 320 px
 const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
-// Höhen = tatsächliche Render-Höhe (font-size × line-height 1.2), kein line-height-Trick
+// Höhen = tatsächliche Render-Höhe (font-size × 1.2 line-height), kein line-height-Trick
+// Breiten = vom Nutzer spezifizierte Werte (reale Darstellung im Display)
 const HC_ELEM_CATALOG = {
     power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
-    logo_l:   { label: 'Logo L',   w: 48,  h: 48, color: '#2255aa', fg: '#fff' },
-    logo_s:   { label: 'Logo S',   w: 40,  h: 40, color: '#3366bb', fg: '#fff' },
-    activity: { label: 'Activity', w: 220, h: 13, color: '#885500', fg: '#fff' },  // 11px × 1.2
-    channel:  { label: 'Sender',   w: 220, h: 19, color: '#1a6633', fg: '#fff' },  // 16px × 1.2
-    title:    { label: 'Titel',    w: 220, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px × 1.2
-    time:     { label: 'Zeit',     w: 220, h: 13, color: '#c8a000', fg: '#222' },  // 11px × 1.2
+    logo_l:   { label: 'Logo L',   w: 35,  h: 48, color: '#2255aa', fg: '#fff' },  // Picon: Hochformat
+    logo_s:   { label: 'Logo S',   w: 28,  h: 40, color: '#3366bb', fg: '#fff' },
+    activity: { label: 'Activity', w: 140, h: 13, color: '#dd7700', fg: '#fff' },  // orange, 11px×1.2
+    channel:  { label: 'Sender',   w: 140, h: 19, color: '#1a6633', fg: '#fff' },  // 16px×1.2
+    title:    { label: 'Titel',    w: 120, h: 17, color: '#7a1f5a', fg: '#fff' },  // 14px×1.2
+    time:     { label: 'Zeit',     w: 120, h: 13, color: '#e8cc00', fg: '#111' },  // helles Gelb, 11px×1.2
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
@@ -57,19 +58,17 @@ function hcCatalogFor(layoutKey, def) {
 }
 
 // Standard-Layouts für v4 (absolute Positionierung, 126px Display-Höhe)
-// Alle Positionen sind reale Pixel — kein line-height-Trick, Höhen = tatsächliche Font-Höhe.
-// Zeit ganz unten (top:108 = 126 - 4px Progressbar - 14px Reserve), Titel direkt darüber.
+// Logo L: 35×48px (Hochformat-Picon). Textspalte beginnt bei left:82 (40+35+7).
+// Elementbreiten: Activity/Sender 140px, Titel/Zeit 120px.
+// Zeit ganz unten: top = 126-13 = 113 → Snap 111, Progress-Bar (4px) überlappt minimal.
 function hcDefaultLayout(mode) {
     if (mode === 'tv') return {
-        // Power: vertikal zentriert (126-28)/2=49
-        power:    { left: 0,   top: 49,  w: 30,  h: 28, visible: true },
-        // Logo L: vertikal zentriert (126-48)/2=39; startet rechts neben Power (40px)
-        logo:     { left: 40,  top: 39,  w: 48,  h: 48, visible: true },
-        // Texte beginnen nach Logo (40+48+7=95): oben Activity + Sender, unten Titel + Zeit
-        activity: { left: 95,  top: 3,   w: 220, h: 13, visible: true },
-        channel:  { left: 95,  top: 21,  w: 220, h: 19, visible: true },
-        title:    { left: 95,  top: 87,  w: 220, h: 17, visible: true },
-        time:     { left: 95,  top: 108, w: 220, h: 13, visible: true },
+        power:    { left: 0,  top: 49,  w: 30,  h: 28, visible: true },  // zentriert (126-28)/2
+        logo:     { left: 40, top: 39,  w: 35,  h: 48, visible: true },  // zentriert (126-48)/2
+        activity: { left: 82, top: 3,   w: 140, h: 13, visible: true },  // oben rechts
+        channel:  { left: 82, top: 21,  w: 140, h: 19, visible: true },  // darunter
+        title:    { left: 82, top: 90,  w: 120, h: 17, visible: true },  // über Zeit
+        time:     { left: 82, top: 111, w: 120, h: 13, visible: true },  // ganz unten
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
@@ -77,8 +76,8 @@ function hcDefaultLayout(mode) {
         logo:     { visible: false },
         channel:  { visible: false },
         activity: { left: 40, top: 3,   w: 275, h: 13, visible: true },
-        title:    { left: 0,  top: 87,  w: 315, h: 17, visible: true },
-        time:     { left: 0,  top: 108, w: 315, h: 13, visible: true },
+        title:    { left: 0,  top: 90,  w: 315, h: 17, visible: true },
+        time:     { left: 0,  top: 111, w: 315, h: 13, visible: true },
     };
 }
 
@@ -2081,7 +2080,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
             const placed = layout[lKey];
             const isPlaced = placed && placed.visible &&
-                (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 60 : placed.h < 60));
+                (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 44 : placed.h < 44));
             const item = document.createElement('div');
             const isIconPal = (catalogKey === 'power' || catalogKey.startsWith('logo'));
             item.style.cssText = [
@@ -2160,7 +2159,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             const sp = this._leSnapPrev;
             if (inGrid && sp) {
                 const sl = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-                const st = Math.max(0, Math.min(HC_DISP_H - HC_PBAR_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+                const st = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
                 sp.style.display = 'block';
                 sp.style.left    = (sl * S) + 'px';
                 sp.style.top     = (st * S) + 'px';
@@ -2201,7 +2200,7 @@ class HarmonyCompanionEditor extends HTMLElement {
                        relY > -cat.h * S * 0.5 && relY < HC_DISP_H * S - cat.h * S * 0.5;
         if (inGrid) {
             const left = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-            const top  = Math.max(0, Math.min(HC_DISP_H - HC_PBAR_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+            const top  = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
             layout[layoutKey] = { left, top, w: cat.w, h: cat.h, visible: true };
         } else {
             delete layout[layoutKey];
