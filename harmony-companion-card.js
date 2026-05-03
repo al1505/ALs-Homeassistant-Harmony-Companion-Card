@@ -2,8 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.4.0 (Display +20px Offset: 320×126 → 340×147 (Editor + Live-Card),
-//                  Uebernehmen-Button zurueck (Auto-Save entfernt))
+// Version: 4.4.1 (Element-Groessen aktualisiert: Activity 80x9, Sender 160x18, Titel 200x15)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.4.0";
+const HC_VERSION = "4.4.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -43,9 +42,9 @@ const HC_ELEM_CATALOG = {
     logo_l:   { label: 'Logo L',   w: 60,  h: 36, color: '#2255aa', fg: '#fff' },
     logo_m:   { label: 'Logo M',   w: 50,  h: 33, color: '#3366bb', fg: '#fff' },  // Picon mittel (neu)
     logo_s:   { label: 'Logo S',   w: 35,  h: 27, color: '#4477cc', fg: '#fff' },
-    activity: { label: 'Activity', w: 65,  h: 12, color: '#dd7700', fg: '#fff' },  // orange
-    channel:  { label: 'Sender',   w: 140, h: 15, color: '#1a6633', fg: '#fff' },
-    title:    { label: 'Titel',    w: 200, h: 12, color: '#7a1f5a', fg: '#fff' },
+    activity: { label: 'Activity', w: 80,  h: 9,  color: '#dd7700', fg: '#fff' },  // orange
+    channel:  { label: 'Sender',   w: 160, h: 18, color: '#1a6633', fg: '#fff' },
+    title:    { label: 'Titel',    w: 200, h: 15, color: '#7a1f5a', fg: '#fff' },
     time:     { label: 'Zeit',     w: 35,  h: 9,  color: '#e8cc00', fg: '#111' },  // helles Gelb, "+109m"
     timespan: { label: 'Beg-End',  w: 65,  h: 9,  color: '#b8a000', fg: '#fff' },  // dunkleres Gelb
 };
@@ -79,9 +78,9 @@ function hcDefaultLayout(mode) {
     if (mode === 'tv') return {
         power:    { left: 0,   top: 60,  w: 25,  h: 24, visible: true },  // zentriert (147-24)/2≈61
         logo:     { left: 30,  top: 54,  w: 60,  h: 36, visible: true },  // Logo L, (147-36)/2≈55
-        activity: { left: 95,  top: 3,   w: 65,  h: 12, visible: true },
-        channel:  { left: 95,  top: 18,  w: 140, h: 15, visible: true },
-        title:    { left: 95,  top: 117, w: 200, h: 12, visible: true },  // über Zeit/Beg-End
+        activity: { left: 95,  top: 3,   w: 80,  h: 9,  visible: true },
+        channel:  { left: 95,  top: 15,  w: 160, h: 18, visible: true },  // top:15 = 3+9+3 (3px Abstand zu Activity)
+        title:    { left: 95,  top: 117, w: 200, h: 15, visible: true },  // über Zeit/Beg-End
         // Zeit unten-rechts: left+w = 305+35 = 340 (Display-Rand)
         time:     { left: 305, top: 138, w: 35,  h: 9,  visible: true },
         // Beg-End links neben Zeit (5px Abstand): 305-5-65 = 235
@@ -92,8 +91,8 @@ function hcDefaultLayout(mode) {
         power:    { left: 0,   top: 60,  w: 25,  h: 24, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
-        activity: { left: 35,  top: 3,   w: 65,  h: 12, visible: true },
-        title:    { left: 0,   top: 117, w: 335, h: 12, visible: true },
+        activity: { left: 35,  top: 3,   w: 80,  h: 9,  visible: true },
+        title:    { left: 0,   top: 117, w: 335, h: 15, visible: true },
         time:     { left: 305, top: 138, w: 35,  h: 9,  visible: true },
         timespan: { left: 235, top: 138, w: 65,  h: 9,  visible: true },
     };
