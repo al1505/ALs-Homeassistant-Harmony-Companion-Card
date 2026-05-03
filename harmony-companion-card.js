@@ -2,8 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.6.1 (Bugfix: _leDrop ueberschrieb beim Verschieben Custom-Eigenschaften
-//                  (bgColor, bgAlpha, radius, etc.). Jetzt bleiben sie erhalten.)
+// Version: 4.7.0 (Mehrere Panels (panel_1, panel_2, ...) mit Auswahl im Editor,
+//                  Click-to-Select fuer nachtraegliche Bearbeitung, Loeschen-Button)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.6.1";
+const HC_VERSION = "4.7.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -62,7 +62,12 @@ const HC_MODE_ELEMS = {
     media: ['power', 'menu', 'panel', 'activity', 'title', 'time', 'timespan'],
 };
 
-// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → xl/l/m/s je h)
+// True wenn Schlüssel ein Panel ist ('panel' oder 'panel_N')
+function hcIsPanel(key) {
+    return key === 'panel' || (typeof key === 'string' && key.startsWith('panel_'));
+}
+
+// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → xl/l/m/s je h, panel_N → panel)
 function hcCatalogFor(layoutKey, def) {
     if (layoutKey === 'logo') {
         const h = (def && def.h) || 0;
@@ -71,6 +76,7 @@ function hcCatalogFor(layoutKey, def) {
         if (h >= 30) return HC_ELEM_CATALOG.logo_m;    // 30–34 (M hat 33)
         return HC_ELEM_CATALOG.logo_s;                  // <30 (S hat 27)
     }
+    if (hcIsPanel(layoutKey)) return HC_ELEM_CATALOG.panel;
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
 
@@ -478,7 +484,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 #display-gradient {
                     position: absolute; inset: 0; z-index: 1; pointer-events: none;
                 }
-                #display-panel {
+                .hc-panel {
                     position: absolute; z-index: 2; pointer-events: none;
                     border-radius: 8px;
                     background: rgba(40,40,40,0.5);
@@ -593,7 +599,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 <div class="display-zone" id="harmony-display">
                     <div id="display-bg"></div>
                     <div id="display-gradient"></div>
-                    <div id="display-panel" style="display:none;"></div>
+                    <!-- Panels werden dynamisch von _applyDisplayLayout erstellt (class: hc-panel) -->
                     <div id="display-power">
                         <svg class="svg-icon" viewBox="0 0 24 24"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>
                     </div>
@@ -1665,7 +1671,7 @@ class HarmonyCompanionCard extends HTMLElement {
     _clearDisplayLayout(display) {
         const props = ['position','left','top','right','bottom','transform',
                        'width','height','lineHeight','margin','zIndex','overflow'];
-        ['display-power','display-dots','display-logo','display-panel','display-activity',
+        ['display-power','display-dots','display-logo','display-activity',
          'display-channel','display-title','display-time','display-timespan'].forEach(id => {
             const el = display.querySelector('#' + id);
             if (!el) return;
@@ -1687,16 +1693,29 @@ class HarmonyCompanionCard extends HTMLElement {
 
         const idMap = {
             power: 'display-power', menu: 'display-dots', logo: 'display-logo',
-            panel: 'display-panel',
             activity: 'display-activity', channel: 'display-channel',
             title: 'display-title', time: 'display-time', timespan: 'display-timespan',
         };
+
+        // Bestehende dynamische Panels aus DOM entfernen — werden gleich neu erstellt
+        display.querySelectorAll('.hc-panel').forEach(el => el.remove());
+
         Object.entries(layout).forEach(([key, def]) => {
-            const el = display.querySelector('#' + (idMap[key] || ''));
-            if (!el) return;
-            if (def.visible === false) { el.style.display = 'none'; return; }
+            const isPanel = hcIsPanel(key);
+            let el;
+            if (isPanel) {
+                if (def.visible === false) return;
+                // Panel dynamisch erzeugen (wird vor Icons/Texten in DOM eingefügt)
+                el = document.createElement('div');
+                el.className = 'hc-panel';
+                el.dataset.panelKey = key;
+                display.appendChild(el);
+            } else {
+                el = display.querySelector('#' + (idMap[key] || ''));
+                if (!el) return;
+                if (def.visible === false) { el.style.display = 'none'; return; }
+            }
             const isIcon  = (key === 'logo' || key === 'power' || key === 'menu');
-            const isPanel = (key === 'panel');
             const w = def.w || 30;
             const h = def.h || 14;
             // KEIN Anker-Wechsel mehr: immer top/left → keine Sprünge beim Verschieben.
@@ -2201,23 +2220,48 @@ class HarmonyCompanionEditor extends HTMLElement {
         return det;
     }
 
-    // Panel-Eigenschaften (Farbe, Alpha, Border-Radius) – wird gerendert wenn Panel platziert ist
+    // Panel-Eigenschaften (Auswahl + Farbe/Alpha/Radius + Löschen) – nur sichtbar wenn ≥1 Panel platziert
     _leRenderPanelControls(mode) {
         const box = this._lePanelBox;
         if (!box) return;
         box.innerHTML = '';
         const layout = this._leLayouts[mode] || {};
-        const panel  = layout.panel;
-        if (!panel || panel.visible === false) {
+        // Liste aller Panels (visible)
+        const panelKeys = Object.keys(layout).filter(k => hcIsPanel(k) && layout[k] && layout[k].visible !== false);
+        if (panelKeys.length === 0) {
             box.style.display = 'none';
+            this._leSelectedPanel = null;
             return;
         }
         box.style.display = 'flex';
+        // Auswahl absichern
+        if (!this._leSelectedPanel || !panelKeys.includes(this._leSelectedPanel)) {
+            this._leSelectedPanel = panelKeys[0];
+        }
+        const selKey = this._leSelectedPanel;
+        const panel  = layout[selKey];
 
+        // Header + Auswahl
         const lblTitle = document.createElement('div');
         lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
         lblTitle.textContent = 'Panel:';
         box.appendChild(lblTitle);
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:12px;';
+        panelKeys.forEach((k, i) => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = 'Panel ' + (i + 1) + (k === 'panel' ? '' : ' (' + k + ')');
+            if (k === selKey) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = (e) => {
+            this._leSelectedPanel = e.target.value;
+            this._leRenderPanelControls(mode);
+            this._leRenderGridEls(mode);   // damit Selection-Highlight aktualisiert wird
+        };
+        box.appendChild(sel);
 
         // Farbe
         const colorWrap = document.createElement('div');
@@ -2230,9 +2274,9 @@ class HarmonyCompanionEditor extends HTMLElement {
         colorInp.value = panel.bgColor || '#404040';
         colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
         colorInp.oninput = (e) => {
-            const cur = this._leLayouts[mode] && this._leLayouts[mode].panel;
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
             if (!cur) return;
-            this._leLayouts[mode].panel = { ...cur, bgColor: e.target.value };
+            this._leLayouts[mode][selKey] = { ...cur, bgColor: e.target.value };
             this._leRenderGridEls(mode);
         };
         colorWrap.appendChild(colorLbl);
@@ -2254,9 +2298,9 @@ class HarmonyCompanionEditor extends HTMLElement {
         alphaInp.oninput = (e) => {
             const a = Number(e.target.value) / 100;
             alphaLbl.textContent = 'Transparenz: ' + e.target.value + '%';
-            const cur = this._leLayouts[mode] && this._leLayouts[mode].panel;
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
             if (!cur) return;
-            this._leLayouts[mode].panel = { ...cur, bgAlpha: a };
+            this._leLayouts[mode][selKey] = { ...cur, bgAlpha: a };
             this._leRenderGridEls(mode);
         };
         alphaWrap.appendChild(alphaLbl);
@@ -2276,14 +2320,26 @@ class HarmonyCompanionEditor extends HTMLElement {
         radInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
         radInp.onchange = (e) => {
             const v = parseInt(e.target.value, 10);
-            const cur = this._leLayouts[mode] && this._leLayouts[mode].panel;
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
             if (!cur) return;
-            this._leLayouts[mode].panel = { ...cur, radius: Number.isFinite(v) ? v : 8 };
+            this._leLayouts[mode][selKey] = { ...cur, radius: Number.isFinite(v) ? v : 8 };
             this._leRenderGridEls(mode);
         };
         radWrap.appendChild(radLbl);
         radWrap.appendChild(radInp);
         box.appendChild(radWrap);
+
+        // Löschen-Button
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Panel löschen';
+        btnDel.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid #c0392b;cursor:pointer;font-size:11px;background:transparent;color:#c0392b;align-self:flex-end;margin-left:auto;';
+        btnDel.onclick = () => {
+            if (this._leLayouts[mode]) delete this._leLayouts[mode][selKey];
+            this._leSelectedPanel = null;
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+        };
+        box.appendChild(btnDel);
     }
 
     // Auto-Save: Layout-Änderungen sofort in HA-Config speichern
@@ -2328,7 +2384,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         // Panel ist Hintergrund-Element → wird vom Overlap-Check ausgenommen
         const rects = els.map(el => {
             const key = el.dataset.key;
-            if (key === 'panel') return null;
+            if (hcIsPanel(key)) return null;  // Panels duerfen mit allem ueberlappen
             const def = layout[key];
             if (!def) return null;
             const cat = hcCatalogFor(key, def);
@@ -2359,7 +2415,8 @@ class HarmonyCompanionEditor extends HTMLElement {
             const cat = HC_ELEM_CATALOG[catalogKey];
             const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
             const placed = layout[lKey];
-            const isPlaced = placed && placed.visible &&
+            // Panel kann mehrfach platziert werden → Palette nie ausgrauen
+            const isPlaced = catalogKey !== 'panel' && placed && placed.visible &&
                 (lKey !== 'logo' || (
                     catalogKey === 'logo_xl' ? placed.h >= 42
                     : catalogKey === 'logo_l' ? (placed.h >= 35 && placed.h < 42)
@@ -2387,8 +2444,9 @@ class HarmonyCompanionEditor extends HTMLElement {
     _leCreateEl(key, def, cat, mode) {
         const S = this._leScale;
         const isIcon   = (key === 'power' || key === 'logo' || key === 'menu');
-        const isPanel  = (key === 'panel');
+        const isPanel  = hcIsPanel(key);
         const isTime   = (key === 'time');
+        const isSelectedPanel = isPanel && this._leSelectedPanel === key;
         const w = def.w || cat.w;
         const h = def.h || cat.h;
         // Zeit: rechtsbündig wenn rechts im Display platziert (> 55% der Breite)
@@ -2412,11 +2470,15 @@ class HarmonyCompanionEditor extends HTMLElement {
             pad,
             `border-radius:${radius};cursor:grab;user-select:none;touch-action:none;`,
             `box-sizing:border-box;z-index:${zIdx};overflow:hidden;white-space:nowrap;`,
-            isPanel ? 'border:1px dashed rgba(255,255,255,0.6);' : 'border:1px solid rgba(255,255,255,0.3);',
+            isPanel
+                ? (isSelectedPanel
+                    ? 'border:2px solid #03a9f4;outline:1px dashed rgba(255,255,255,0.5);'
+                    : 'border:1px dashed rgba(255,255,255,0.6);')
+                : 'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
         const catalogKey = key === 'logo'
             ? (h >= 42 ? 'logo_xl' : h >= 35 ? 'logo_l' : h >= 30 ? 'logo_m' : 'logo_s')
-            : key;
+            : (isPanel ? 'panel' : key);
         // Label als separates Kind, damit Resize-Handle nicht überschrieben wird
         const labelEl = document.createElement('div');
         labelEl.className = 'le-el-label';
@@ -2448,6 +2510,12 @@ class HarmonyCompanionEditor extends HTMLElement {
         el.addEventListener('pointerdown', (e) => {
             if (e.target === resizeH) return;  // Resize hat Vorrang
             e.preventDefault();
+            // Panel-Auswahl beim Klick (für Property-Editor)
+            if (isPanel && this._leSelectedPanel !== key) {
+                this._leSelectedPanel = key;
+                this._leRenderPanelControls(mode);
+                this._leRenderGridEls(mode);
+            }
             this._leStartDrag(e, catalogKey, el, mode);
         });
         return el;
@@ -2516,13 +2584,30 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!cat) return;
         const S = this._leScale;
 
-        // Drag aus Grid (verschiebbares Element) → bestehende Größe behalten
-        // Drag aus Palette → Katalog-Defaults verwenden
+        // Layout-Key bestimmen
         const isFromGrid = sourceEl && sourceEl.classList && sourceEl.classList.contains('le-el');
+        let layoutKey;
+        if (isFromGrid) {
+            // Bestehendes Element verschieben → Layout-Key aus dataset
+            layoutKey = sourceEl.dataset.key || catalogKey;
+        } else {
+            // Aus Palette: Panel bekommt neue ID, Logo wird auf 'logo' gemappt
+            if (catalogKey === 'panel') {
+                let n = 1;
+                while (this._leLayouts[mode] && this._leLayouts[mode]['panel_' + n]
+                       && this._leLayouts[mode]['panel_' + n].visible !== false) n++;
+                layoutKey = 'panel_' + n;
+            } else if (catalogKey.startsWith('logo')) {
+                layoutKey = 'logo';
+            } else {
+                layoutKey = catalogKey;
+            }
+        }
+
+        // Drag aus Grid → bestehende Größe behalten
         let dragW = cat.w, dragH = cat.h;
         if (isFromGrid) {
-            const layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
-            const existing  = this._leLayouts[mode] && this._leLayouts[mode][layoutKey];
+            const existing = this._leLayouts[mode] && this._leLayouts[mode][layoutKey];
             if (existing && existing.visible !== false) {
                 dragW = existing.w || cat.w;
                 dragH = existing.h || cat.h;
@@ -2533,7 +2618,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         const offsetX = dragW * S / 2;
         const offsetY = dragH * S / 2;
 
-        this._leDrag = { catalogKey, offsetX, offsetY, mode, w: dragW, h: dragH };
+        this._leDrag = { catalogKey, layoutKey, offsetX, offsetY, mode, w: dragW, h: dragH };
 
         const grid = this._leGridEl;
 
@@ -2564,7 +2649,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             document.removeEventListener('pointermove', onMove);
             document.removeEventListener('pointerup',   onUp);
             if (this._leSnapPrev) this._leSnapPrev.style.display = 'none';
-            this._leDrop(ev, catalogKey, offsetX, offsetY, mode, dragW, dragH);
+            this._leDrop(ev, catalogKey, offsetX, offsetY, mode, dragW, dragH, layoutKey);
             this._leDrag = null;
             if (this._leCoordTip) this._leCoordTip.textContent = '';
         };
@@ -2572,11 +2657,14 @@ class HarmonyCompanionEditor extends HTMLElement {
         document.addEventListener('pointerup',   onUp);
     }
 
-    _leDrop(e, catalogKey, offsetX, offsetY, mode, dragW, dragH) {
+    _leDrop(e, catalogKey, offsetX, offsetY, mode, dragW, dragH, layoutKey) {
         const grid = this._leGridEl;
         if (!grid) return;
-        const cat       = HC_ELEM_CATALOG[catalogKey];
-        const layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+        const cat = HC_ELEM_CATALOG[catalogKey];
+        // Fallback falls layoutKey nicht uebergeben (alte Aufrufe)
+        if (!layoutKey) {
+            layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+        }
         const S         = this._leScale;
         const gr        = grid.getBoundingClientRect();
         const relX      = e.clientX - gr.left - offsetX;
