@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.17.0 (Layouts 2-6: Fernsehen absolut neben Power-Button, Sender/Titel unterhalb)
+// Version: 3.18.0 (Fix: Fernsehen exakt auf Hoehe des Power-Buttons ausgerichtet)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.17.0";
+const HC_VERSION = "3.18.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -1185,24 +1185,30 @@ class HarmonyCompanionCard extends HTMLElement {
             if (timeEl)  timeEl.style.display  = 'none';
         }
 
-        // Activity-Text: Layouts 2-6 im TV-Modus → absolut direkt rechts neben Power-Button (oben-links).
-        // Nicht im Textfluss, damit Sender/Titel sauber unterhalb beginnen.
+        // Activity-Text: Layouts 2-6 im TV-Modus → absolut direkt rechts neben Power-Button.
+        // top+height+alignItems: exakte vertikale Ausrichtung mit dem Power-Button (top:6px, h:36px).
         if (layout !== '1' && isTVAct && isPlaying) {
-            actEl.style.position   = 'absolute';
-            actEl.style.top        = '10px';
-            actEl.style.left       = '52px';   // Power-Button: left:8px + width:36px + Gap:8px = 52px
-            actEl.style.zIndex     = '4';
-            actEl.style.maxWidth   = 'calc(100% - 60px)';
-            actEl.style.fontSize   = '14px';
-            actEl.style.fontWeight = '600';
-            actEl.style.opacity    = '1';
+            actEl.style.position     = 'absolute';
+            actEl.style.top          = '6px';    // gleicher top wie Power-Button
+            actEl.style.height       = '36px';   // gleiche Hoehe wie Power-Button
+            actEl.style.display      = 'flex';
+            actEl.style.alignItems   = 'center'; // Text vertikal mittig → exakt auf Hoehe des Power-Buttons
+            actEl.style.left         = '52px';   // Power: left:8px + width:36px + Gap:8px = 52px
+            actEl.style.zIndex       = '4';
+            actEl.style.maxWidth     = 'calc(100% - 60px)';
+            actEl.style.fontSize     = '14px';
+            actEl.style.fontWeight   = '600';
+            actEl.style.opacity      = '1';
         } else {
-            // Layout 1 oder Idle: Textfluss, kein absolutes Positioning
-            actEl.style.position   = '';
-            actEl.style.top        = '';
-            actEl.style.left       = '';
-            actEl.style.zIndex     = '';
-            actEl.style.maxWidth   = '';
+            // Layout 1 oder Idle: Textfluss zuruecksetzen
+            actEl.style.position     = '';
+            actEl.style.top          = '';
+            actEl.style.height       = '';
+            actEl.style.display      = '';
+            actEl.style.alignItems   = '';
+            actEl.style.left         = '';
+            actEl.style.zIndex       = '';
+            actEl.style.maxWidth     = '';
         }
 
         // Power-Button-Position:
