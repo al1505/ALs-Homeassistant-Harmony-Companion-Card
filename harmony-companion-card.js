@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.16.0 (Layouts 2-6: Power oben-links, Fernsehen daneben, grosses Logo wie Layout 5)
+// Version: 3.17.0 (Layouts 2-6: Fernsehen absolut neben Power-Button, Sender/Titel unterhalb)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.16.0";
+const HC_VERSION = "3.17.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -410,14 +410,14 @@ class HarmonyCompanionCard extends HTMLElement {
                    ============================================================ */
 
                 /* Layouts 2-6: Grosses Logo vertikal zentriert links (70x70px),
-                   Power-Button oben-links (top:6px).
-                   Text-Bereich beginnt nach dem Logo (padding-left: 90px im tv-mode).
-                   Jedes Layout hat eine eigene Zeitanzeige-Position. */
+                   Power-Button oben-links (top:6px), "Fernsehen" absolut daneben (JS).
+                   padding-top: Raum fuer die Power+Fernsehen-Zeile oben.
+                   padding-left: Raum fuer das grosse Logo links. */
                 #harmony-display[data-layout="2"].tv-mode,
                 #harmony-display[data-layout="3"].tv-mode,
                 #harmony-display[data-layout="4"].tv-mode,
                 #harmony-display[data-layout="5"].tv-mode,
-                #harmony-display[data-layout="6"].tv-mode { padding-left: 90px; }
+                #harmony-display[data-layout="6"].tv-mode { padding-left: 90px; padding-top: 46px; }
 
                 #harmony-display[data-layout="2"] #display-logo,
                 #harmony-display[data-layout="3"] #display-logo,
@@ -1183,6 +1183,26 @@ class HarmonyCompanionCard extends HTMLElement {
             if (chanEl)  chanEl.style.display  = 'none';
             if (titleEl) titleEl.style.display = 'none';
             if (timeEl)  timeEl.style.display  = 'none';
+        }
+
+        // Activity-Text: Layouts 2-6 im TV-Modus → absolut direkt rechts neben Power-Button (oben-links).
+        // Nicht im Textfluss, damit Sender/Titel sauber unterhalb beginnen.
+        if (layout !== '1' && isTVAct && isPlaying) {
+            actEl.style.position   = 'absolute';
+            actEl.style.top        = '10px';
+            actEl.style.left       = '52px';   // Power-Button: left:8px + width:36px + Gap:8px = 52px
+            actEl.style.zIndex     = '4';
+            actEl.style.maxWidth   = 'calc(100% - 60px)';
+            actEl.style.fontSize   = '14px';
+            actEl.style.fontWeight = '600';
+            actEl.style.opacity    = '1';
+        } else {
+            // Layout 1 oder Idle: Textfluss, kein absolutes Positioning
+            actEl.style.position   = '';
+            actEl.style.top        = '';
+            actEl.style.left       = '';
+            actEl.style.zIndex     = '';
+            actEl.style.maxWidth   = '';
         }
 
         // Power-Button-Position:
