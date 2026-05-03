@@ -2,7 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.0.1 (Bugfixes: Zeit-Anzeige, Apply-Fix, Editor 2x + Snap-Preview)
+// Version: 4.0.2 (Editor: Logo 48px, Zeit gelb, Grid 2x feiner, Overlap-Check,
+//                  Layout-Sektion top-level, Snap-Limit Progress-Bar, Zeit-Ausrichtung dyn.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.0.1";
+const HC_VERSION = "4.0.2";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -25,20 +26,21 @@ const escHtml = (str) => {
 };
 
 // ── Layout-Editor: Raster-Konstanten ─────────────────────────────────────────
-const HC_GRID_COLS = 32, HC_COL_W = 10;   // 32 Spalten à 10 px = 320 px
-const HC_GRID_ROWS = 18, HC_ROW_H = 7;    // 18 Zeilen  à  7 px = 126 px
+const HC_GRID_COLS = 64, HC_COL_W = 5;    // 64 Spalten à 5 px = 320 px
+const HC_GRID_ROWS = 42, HC_ROW_H = 3;    // 42 Zeilen  à  3 px = 126 px
+const HC_PBAR_H    = 4;                   // Progress-Bar Höhe (px) — kein Snap in diesen Bereich
 const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 320 px
 const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
 
 // Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
 const HC_ELEM_CATALOG = {
     power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
-    logo_l:   { label: 'Logo L',   w: 70,  h: 70, color: '#2255aa', fg: '#fff' },
+    logo_l:   { label: 'Logo L',   w: 48,  h: 48, color: '#2255aa', fg: '#fff' },
     logo_s:   { label: 'Logo S',   w: 40,  h: 40, color: '#3366bb', fg: '#fff' },
     activity: { label: 'Activity', w: 120, h: 14, color: '#885500', fg: '#fff' },
     channel:  { label: 'Sender',   w: 120, h: 21, color: '#1a6633', fg: '#fff' },
     title:    { label: 'Titel',    w: 200, h: 14, color: '#7a1f5a', fg: '#fff' },
-    time:     { label: 'Zeit',     w: 120, h: 14, color: '#884400', fg: '#fff' },
+    time:     { label: 'Zeit',     w: 120, h: 14, color: '#c8a000', fg: '#222' },
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
@@ -49,7 +51,7 @@ const HC_MODE_ELEMS = {
 
 // Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_l/logo_s je h)
 function hcCatalogFor(layoutKey, def) {
-    if (layoutKey === 'logo') return HC_ELEM_CATALOG[def && def.h >= 60 ? 'logo_l' : 'logo_s'];
+    if (layoutKey === 'logo') return HC_ELEM_CATALOG[def && def.h >= 44 ? 'logo_l' : 'logo_s'];
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
 
@@ -57,7 +59,7 @@ function hcCatalogFor(layoutKey, def) {
 function hcDefaultLayout(mode) {
     if (mode === 'tv') return {
         power:    { left: 0,   top: 49, w: 30,  h: 28, visible: true },
-        logo:     { left: 40,  top: 28, w: 70,  h: 70, visible: true },
+        logo:     { left: 40,  top: 39, w: 48,  h: 48, visible: true },
         activity: { left: 120, top: 21, w: 120, h: 14, visible: true },
         channel:  { left: 120, top: 42, w: 120, h: 21, visible: true },
         title:    { left: 120, top: 70, w: 200, h: 14, visible: true },
@@ -1587,6 +1589,12 @@ class HarmonyCompanionCard extends HTMLElement {
             el.style.overflow  = 'hidden';
             if (key !== 'logo' && key !== 'power') el.style.lineHeight = def.h + 'px';
             if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
+            if (key === 'time') {
+                const timeRight = def.left + (def.w || 120) > HC_DISP_W * 0.55;
+                el.style.textAlign  = timeRight ? 'right'  : 'left';
+                el.style.paddingRight = timeRight ? '5px' : '0';
+                el.style.paddingLeft  = timeRight ? '0'   : '0';
+            }
         });
     }
 
@@ -1826,6 +1834,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             }
             root.appendChild(this._sectionHub());
             root.appendChild(this._sectionEnigma2());
+            root.appendChild(this._sectionLayout());
             root.appendChild(this._sectionSlots('act', 'Aktivitaeten-Slots (Hauptbereich)'));
             root.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));
             root.appendChild(this._sectionButtons());
@@ -1915,6 +1924,15 @@ class HarmonyCompanionEditor extends HTMLElement {
             'box-sizing:border-box;cursor:crosshair;flex-shrink:0;touch-action:none;',
         ].join('');
         this._leGridEl = grid;
+
+        // Progress-Bar-Sperrzone (untere 4px = kein Snap-Bereich)
+        const pbarZone = document.createElement('div');
+        pbarZone.style.cssText = [
+            `position:absolute;bottom:0;left:0;right:0;height:${HC_PBAR_H * S}px;`,
+            'background:rgba(255,255,255,0.06);pointer-events:none;z-index:1;',
+            'border-top:1px dashed rgba(255,255,255,0.25);',
+        ].join('');
+        grid.appendChild(pbarZone);
 
         // Snap-Preview (zeigt Zielposition beim Ziehen)
         const snapPrev = document.createElement('div');
@@ -2009,6 +2027,35 @@ class HarmonyCompanionEditor extends HTMLElement {
             if (!cat) return;
             grid.appendChild(this._leCreateEl(key, def, cat, mode));
         });
+        this._leCheckOverlaps(mode);
+    }
+
+    _leCheckOverlaps(mode) {
+        const grid = this._leGridEl;
+        if (!grid) return;
+        const layout = this._leLayouts[mode] || {};
+        const els = [...grid.querySelectorAll('.le-el')];
+        // Rechtecke aus gespeichertem Layout ermitteln
+        const rects = els.map(el => {
+            const key = el.dataset.key;
+            const def = layout[key];
+            if (!def) return null;
+            const cat = hcCatalogFor(key, def);
+            if (!cat) return null;
+            return { el, x1: def.left, y1: def.top, x2: def.left + cat.w, y2: def.top + cat.h };
+        }).filter(Boolean);
+        // Reset
+        els.forEach(el => { el.style.border = '1px solid rgba(255,255,255,0.3)'; });
+        // Überlappungscheck (O(n²), max ~7 Elemente)
+        for (let i = 0; i < rects.length; i++) {
+            for (let j = i + 1; j < rects.length; j++) {
+                const a = rects[i], b = rects[j];
+                if (a.x2 > b.x1 && a.x1 < b.x2 && a.y2 > b.y1 && a.y1 < b.y2) {
+                    a.el.style.border = '2px solid #ff3333';
+                    b.el.style.border = '2px solid #ff3333';
+                }
+            }
+        }
     }
 
     _leRenderPaletteItems(mode, container) {
@@ -2022,13 +2069,15 @@ class HarmonyCompanionEditor extends HTMLElement {
             const isPlaced = placed && placed.visible &&
                 (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 60 : placed.h < 60));
             const item = document.createElement('div');
+            const isIconPal = (catalogKey === 'power' || catalogKey.startsWith('logo'));
             item.style.cssText = [
                 'padding:4px 10px;border-radius:5px;border:1px solid rgba(255,255,255,0.25);',
                 `background:${cat.color};color:${cat.fg};`,
-                'font-size:11px;font-weight:600;cursor:grab;user-select:none;white-space:nowrap;',
+                'font-size:11px;font-weight:600;cursor:grab;user-select:none;',
+                isIconPal ? 'white-space:pre-line;text-align:center;line-height:1.3;' : 'white-space:nowrap;',
                 `opacity:${isPlaced ? '0.35' : '1'};transition:opacity .15s;touch-action:none;`,
             ].join('');
-            item.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
+            item.textContent = isIconPal ? (cat.label + '\n' + cat.w + '×' + cat.h) : (cat.label + ' ' + cat.w + '×' + cat.h);
             item.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 this._leStartDrag(e, catalogKey, item, mode);
@@ -2039,6 +2088,12 @@ class HarmonyCompanionEditor extends HTMLElement {
 
     _leCreateEl(key, def, cat, mode) {
         const S = this._leScale;
+        const isIcon   = (key === 'power' || key === 'logo');
+        const isTime   = (key === 'time');
+        // Zeit: rechtsbündig wenn rechts im Display platziert (> 55% der Breite)
+        const timeRight = isTime && (def.left + cat.w > HC_DISP_W * 0.55);
+        const align = isIcon ? 'center' : (timeRight ? 'flex-end' : 'flex-start');
+        const pad   = isIcon ? '' : (timeRight ? 'padding-right:10px;' : 'padding-left:10px;');
         const el = document.createElement('div');
         el.className = 'le-el';
         el.dataset.key = key;
@@ -2048,13 +2103,19 @@ class HarmonyCompanionEditor extends HTMLElement {
             `width:${cat.w * S}px;height:${cat.h * S}px;`,
             `background:${cat.color};color:${cat.fg};`,
             'font-size:10px;font-weight:700;',
-            'display:flex;align-items:center;justify-content:center;text-align:center;',
+            `display:flex;align-items:center;justify-content:${align};`,
+            isIcon ? 'flex-direction:column;text-align:center;' : '',
+            pad,
             'border-radius:3px;cursor:grab;user-select:none;touch-action:none;',
             'box-sizing:border-box;z-index:2;overflow:hidden;white-space:nowrap;',
             'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
-        const catalogKey = key === 'logo' ? (def.h >= 60 ? 'logo_l' : 'logo_s') : key;
-        el.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
+        const catalogKey = key === 'logo' ? (def.h >= 44 ? 'logo_l' : 'logo_s') : key;
+        if (isIcon) {
+            el.innerHTML = `<span style="line-height:1.1">${cat.label}</span><span style="font-size:9px;opacity:0.8;margin-top:1px">${cat.w}×${cat.h}</span>`;
+        } else {
+            el.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
+        }
         el.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             this._leStartDrag(e, catalogKey, el, mode);
@@ -2085,7 +2146,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             const sp = this._leSnapPrev;
             if (inGrid && sp) {
                 const sl = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-                const st = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+                const st = Math.max(0, Math.min(HC_DISP_H - HC_PBAR_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
                 sp.style.display = 'block';
                 sp.style.left    = (sl * S) + 'px';
                 sp.style.top     = (st * S) + 'px';
@@ -2126,7 +2187,7 @@ class HarmonyCompanionEditor extends HTMLElement {
                        relY > -cat.h * S * 0.5 && relY < HC_DISP_H * S - cat.h * S * 0.5;
         if (inGrid) {
             const left = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((relX / S) / HC_COL_W) * HC_COL_W));
-            const top  = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
+            const top  = Math.max(0, Math.min(HC_DISP_H - HC_PBAR_H - cat.h, Math.round((relY / S) / HC_ROW_H) * HC_ROW_H));
             layout[layoutKey] = { left, top, w: cat.w, h: cat.h, visible: true };
         } else {
             delete layout[layoutKey];
@@ -2202,7 +2263,6 @@ class HarmonyCompanionEditor extends HTMLElement {
                 body.appendChild(row);
             });
         }
-        body.appendChild(this._sectionLayout());
         return det;
     }
 
