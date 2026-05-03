@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.19.0 (Layout 1-5: absolute CSS-Positionierung, kein Inline-JS)
+// Version: 3.20.0 (Layouts 1-6 exakt aus Excel, Layout 6 ohne Sender, line-height gesetzt)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.19.0";
+const HC_VERSION = "3.20.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -404,136 +404,134 @@ class HarmonyCompanionCard extends HTMLElement {
                 #display-progress-fill { height: 100%; width: 0%; background: rgba(255,255,255,0.85); transition: width 0.8s linear; }
                 .display-error { color: #cc0000; font-size: 13px; }
                 /* ============================================================
-                   DISPLAY LAYOUTS 1-5 (data-layout Attribut)
-                   Alle Elemente absolut positioniert im TV-Modus.
-                   Koordinaten aus Layout-Excel: Raster 32x18, 10px/Sp, 7px/Z.
-                   Display: ~320x126px
+                   DISPLAY LAYOUTS 1-6 (data-layout Attribut)
+                   Koordinaten aus Layout-Excel: Raster 32x18, 10px/Sp, 7px/Z = 320x126px
                    ============================================================ */
 
-                /* Layout 1: Power zentriert-links (top:49px=center), Logo daneben, Text rechts */
+                /* Layout 1: Power links-mitte, Logo daneben, Textblock rechts */
                 #harmony-display[data-layout="1"].tv-mode #display-power {
-                    left: 0; top: 49px; width: 30px; height: 30px; transform: none; bottom: auto;
+                    left: 0; top: 49px; width: 30px; height: 28px; transform: none; bottom: auto;
                 }
                 #harmony-display[data-layout="1"].tv-mode #display-logo {
                     left: 40px; top: 28px; width: 70px; height: 70px; transform: none;
                 }
                 #harmony-display[data-layout="1"].tv-mode #display-activity {
-                    position: absolute; left: 120px; top: 21px; width: 110px; height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px;
+                    position: absolute; left: 120px; top: 21px; width: 120px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
                 }
                 #harmony-display[data-layout="1"].tv-mode #display-channel {
-                    position: absolute; left: 120px; top: 42px; width: 110px; margin: 0;
+                    position: absolute; left: 120px; top: 42px; width: 120px; line-height: 21px; margin: 0;
                 }
                 #harmony-display[data-layout="1"].tv-mode #display-title {
-                    position: absolute; left: 120px; top: 70px; width: 170px; margin: 0;
+                    position: absolute; left: 120px; top: 70px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="1"].tv-mode #display-time {
-                    position: absolute; left: 120px; top: 91px; width: 190px; text-align: left; margin: 0;
+                    position: absolute; left: 120px; top: 91px; width: 120px; line-height: 14px; text-align: left; margin: 0;
                 }
 
-                /* Layout 2: Power+Fernsehen oben, Logo links oben, Sender/Titel darunter, Zeit unten-links */
+                /* Layout 2: Power+Fernsehen oben, Logo links, Sender/Titel/Zeit rechts */
                 #harmony-display[data-layout="2"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 30px; transform: none; bottom: auto;
+                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
                 }
                 #harmony-display[data-layout="2"].tv-mode #display-logo {
-                    left: 0; top: 28px; width: 50px; height: 49px; transform: none;
+                    left: 0; top: 35px; width: 70px; height: 70px; transform: none;
                 }
                 #harmony-display[data-layout="2"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 110px; height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px;
+                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
                 }
                 #harmony-display[data-layout="2"].tv-mode #display-channel {
-                    position: absolute; left: 0; top: 77px; width: 110px; margin: 0;
+                    position: absolute; left: 80px; top: 42px; width: 120px; line-height: 21px; margin: 0;
                 }
                 #harmony-display[data-layout="2"].tv-mode #display-title {
-                    position: absolute; left: 0; top: 98px; width: 250px; margin: 0;
+                    position: absolute; left: 80px; top: 70px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="2"].tv-mode #display-time {
-                    position: absolute; left: 0; top: 112px; width: 220px; text-align: left; margin: 0;
+                    position: absolute; left: 80px; top: 91px; width: 120px; line-height: 14px; text-align: left; margin: 0;
                 }
 
-                /* Layout 3: Wie Layout 2, Zeit unten-rechts */
+                /* Layout 3: wie Layout 2, Zeit unten-rechts */
                 #harmony-display[data-layout="3"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 30px; transform: none; bottom: auto;
+                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-logo {
-                    left: 0; top: 28px; width: 50px; height: 49px; transform: none;
+                    left: 0; top: 28px; width: 70px; height: 70px; transform: none;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 110px; height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px;
+                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-channel {
-                    position: absolute; left: 0; top: 84px; width: 110px; margin: 0;
+                    position: absolute; left: 80px; top: 56px; width: 120px; line-height: 21px; margin: 0;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-title {
-                    position: absolute; left: 0; top: 112px; width: 220px; margin: 0;
+                    position: absolute; left: 80px; top: 84px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; top: 112px; width: 160px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; top: 112px; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
-                /* Layout 4: Power+Fernsehen oben, Logo links zentriert, Text rechts, Zeit inline */
+                /* Layout 4: Power+Fernsehen oben, Logo links (60x56), Sender/Titel/Zeit rechts */
                 #harmony-display[data-layout="4"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 30px; transform: none; bottom: auto;
+                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-logo {
-                    left: 0; top: 42px; width: 70px; height: 70px; transform: none;
+                    left: 0; top: 35px; width: 60px; height: 56px; transform: none;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 110px; height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px;
+                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-channel {
-                    position: absolute; left: 80px; top: 42px; width: 110px; margin: 0;
+                    position: absolute; left: 70px; top: 42px; width: 120px; line-height: 21px; margin: 0;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-title {
-                    position: absolute; left: 80px; top: 77px; width: 220px; margin: 0;
+                    position: absolute; left: 70px; top: 70px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-time {
-                    position: absolute; left: 80px; top: 98px; width: 220px; text-align: left; margin: 0;
+                    position: absolute; left: 0; top: 112px; width: 120px; line-height: 14px; text-align: left; margin: 0;
                 }
 
-                /* Layout 5: Power+Fernsehen oben, Logo kleiner, Sender/Titel rechts, Zeit unten-rechts */
+                /* Layout 5: Power+Fernsehen oben, Logo links (70x70), Sender/Titel rechts, Zeit unten-rechts */
                 #harmony-display[data-layout="5"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 30px; transform: none; bottom: auto;
+                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-logo {
-                    left: 0; top: 42px; width: 50px; height: 56px; transform: none;
+                    left: 0; top: 35px; width: 70px; height: 70px; transform: none;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 110px; height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px;
+                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-channel {
-                    position: absolute; left: 60px; top: 42px; width: 110px; margin: 0;
+                    position: absolute; left: 80px; top: 49px; width: 120px; line-height: 21px; margin: 0;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-title {
-                    position: absolute; left: 60px; top: 77px; width: 220px; margin: 0;
+                    position: absolute; left: 80px; top: 77px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; top: 112px; width: 160px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; top: 112px; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
-                /* Layout 6: Fallback = Layout 5 */
+                /* Layout 6: kein Sender; Power+Fernsehen oben, Logo links, Titel+Zeit unten */
                 #harmony-display[data-layout="6"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 30px; transform: none; bottom: auto;
+                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-logo {
-                    left: 0; top: 42px; width: 50px; height: 56px; transform: none;
+                    left: 0; top: 35px; width: 70px; height: 70px; transform: none;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 110px; height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px;
+                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
+                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-channel {
-                    position: absolute; left: 60px; top: 42px; width: 110px; margin: 0;
+                    display: none !important;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-title {
-                    position: absolute; left: 60px; top: 77px; width: 220px; margin: 0;
+                    position: absolute; left: 0; top: 112px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; top: 112px; width: 160px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; top: 112px; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
                 .match-zone {
                     min-height: 38px; min-width: 38px;
