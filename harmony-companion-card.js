@@ -2,8 +2,9 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.7.0 (Mehrere Panels (panel_1, panel_2, ...) mit Auswahl im Editor,
-//                  Click-to-Select fuer nachtraegliche Bearbeitung, Loeschen-Button)
+// Version: 4.8.0 (Linien-Element, mehrere Linien mit Auswahl + Rotation,
+//                  Bugfix: setConfig setzte _leLayouts zurueck → Zustand verloren,
+//                  Slider-Drag-Fix, Transparenz-Slider semantisch invertiert)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +12,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.7.0";
+const HC_VERSION = "4.8.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -54,29 +55,36 @@ const HC_ELEM_CATALOG = {
     timespan: { label: 'Beg-End',  w: 65,  h: 9,  color: '#b8a000', fg: '#fff' },  // dunkleres Gelb
     // Panel: Hintergrund-Element (frei platzierbar, abgerundete Ecken, Farbe + Alpha einstellbar)
     panel:    { label: 'Panel',    w: 20,  h: 20, color: '#404040', fg: '#fff' },
+    // Linie: gerader Strich, Länge/Dicke/Rotation/Farbe einstellbar (mehrfach)
+    line:     { label: 'Linie',    w: 50,  h: 2,  color: '#888888', fg: '#fff' },
 };
 
 // Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
 const HC_MODE_ELEMS = {
-    tv:    ['power', 'menu', 'panel', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
-    media: ['power', 'menu', 'panel', 'activity', 'title', 'time', 'timespan'],
+    tv:    ['power', 'menu', 'panel', 'line', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
+    media: ['power', 'menu', 'panel', 'line', 'activity', 'title', 'time', 'timespan'],
 };
 
 // True wenn Schlüssel ein Panel ist ('panel' oder 'panel_N')
 function hcIsPanel(key) {
     return key === 'panel' || (typeof key === 'string' && key.startsWith('panel_'));
 }
+// True wenn Schlüssel eine Linie ist ('line' oder 'line_N')
+function hcIsLine(key) {
+    return key === 'line' || (typeof key === 'string' && key.startsWith('line_'));
+}
 
-// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → xl/l/m/s je h, panel_N → panel)
+// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück
 function hcCatalogFor(layoutKey, def) {
     if (layoutKey === 'logo') {
         const h = (def && def.h) || 0;
-        if (h >= 42) return HC_ELEM_CATALOG.logo_xl;   // h≥42 (XL hat 48)
-        if (h >= 35) return HC_ELEM_CATALOG.logo_l;    // 35–41 (L hat 36)
-        if (h >= 30) return HC_ELEM_CATALOG.logo_m;    // 30–34 (M hat 33)
-        return HC_ELEM_CATALOG.logo_s;                  // <30 (S hat 27)
+        if (h >= 42) return HC_ELEM_CATALOG.logo_xl;
+        if (h >= 35) return HC_ELEM_CATALOG.logo_l;
+        if (h >= 30) return HC_ELEM_CATALOG.logo_m;
+        return HC_ELEM_CATALOG.logo_s;
     }
     if (hcIsPanel(layoutKey)) return HC_ELEM_CATALOG.panel;
+    if (hcIsLine(layoutKey))  return HC_ELEM_CATALOG.line;
     return HC_ELEM_CATALOG[layoutKey] || null;
 }
 
@@ -488,6 +496,11 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; z-index: 2; pointer-events: none;
                     border-radius: 8px;
                     background: rgba(40,40,40,0.5);
+                }
+                .hc-line {
+                    position: absolute; z-index: 2; pointer-events: none;
+                    background: #888888;
+                    transform-origin: center center;
                 }
                 #display-power {
                     position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
@@ -1697,18 +1710,18 @@ class HarmonyCompanionCard extends HTMLElement {
             title: 'display-title', time: 'display-time', timespan: 'display-timespan',
         };
 
-        // Bestehende dynamische Panels aus DOM entfernen — werden gleich neu erstellt
-        display.querySelectorAll('.hc-panel').forEach(el => el.remove());
+        // Bestehende dynamische Panels und Linien entfernen
+        display.querySelectorAll('.hc-panel,.hc-line').forEach(el => el.remove());
 
         Object.entries(layout).forEach(([key, def]) => {
             const isPanel = hcIsPanel(key);
+            const isLine  = hcIsLine(key);
             let el;
-            if (isPanel) {
+            if (isPanel || isLine) {
                 if (def.visible === false) return;
-                // Panel dynamisch erzeugen (wird vor Icons/Texten in DOM eingefügt)
                 el = document.createElement('div');
-                el.className = 'hc-panel';
-                el.dataset.panelKey = key;
+                el.className = isPanel ? 'hc-panel' : 'hc-line';
+                el.dataset.elemKey = key;
                 display.appendChild(el);
             } else {
                 el = display.querySelector('#' + (idMap[key] || ''));
@@ -1728,11 +1741,20 @@ class HarmonyCompanionCard extends HTMLElement {
             el.style.top       = (def.top  || 0) + 'px';
             el.style.right     = 'auto';
             el.style.bottom    = 'auto';
-            el.style.transform = 'none';
+            el.style.transform = isLine ? `rotate(${def.rotation || 0}deg)` : 'none';
             el.style.margin    = '0';
-            el.style.zIndex    = isPanel ? '2' : '3';   // Panel hinter Icons/Texten
+            el.style.zIndex    = (isPanel || isLine) ? '2' : '3';   // Hintergrund-Elemente
             el.style.width     = w + 'px';
             el.style.overflow  = 'hidden';
+            if (isLine) {
+                el.style.height       = h + 'px';
+                el.style.lineHeight   = '';
+                el.style.background   = def.color || '#888888';
+                el.style.borderRadius = '0';
+                el.style.transformOrigin = 'center center';
+                el.style.pointerEvents = 'none';
+                return;  // Keine weiteren Style-Eigenschaften nötig
+            }
             if (isPanel) {
                 // Panel: Hintergrundfarbe + Alpha + Border-Radius aus def-Eigenschaften
                 el.style.height       = h + 'px';
@@ -1824,8 +1846,10 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!this._config.buttons) this._config.buttons = { global: {} };
         if (!this._config.dynamic_slots) this._config.dynamic_slots = {};
         if (!this._config.activity_media) this._config.activity_media = {};
-        // Editor-Zustand bei neuer Config zurücksetzen
-        this._leLayouts = {};
+        // Editor-Zustand NICHT zurücksetzen — sonst gehen Custom-Werte (bgColor, bgAlpha, ...)
+        // verloren wenn HA setConfig nach unserem _patchTop aufruft. _leLayouts wird beim
+        // ersten Lesen über _leLoadLayout aus this._config gemerged.
+        if (!this._leLayouts) this._leLayouts = {};
 
         if (this._loaded) { this._tryBuild(); return; }
         if (this._loading) return;
@@ -2184,10 +2208,17 @@ class HarmonyCompanionEditor extends HTMLElement {
 
         // Panel-Eigenschaften (nur sichtbar wenn Panel im Layout)
         const panelBox = document.createElement('div');
-        panelBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        panelBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
         this._lePanelBox = panelBox;
         this._leRenderPanelControls(mode);
         body.appendChild(panelBox);
+
+        // Linien-Eigenschaften (nur sichtbar wenn Linie im Layout)
+        const lineBox = document.createElement('div');
+        lineBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        this._leLineBox = lineBox;
+        this._leRenderLineControls(mode);
+        body.appendChild(lineBox);
 
         // Aktions-Buttons
         const actRow = document.createElement('div');
@@ -2225,6 +2256,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         const box = this._lePanelBox;
         if (!box) return;
         box.innerHTML = '';
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
         const layout = this._leLayouts[mode] || {};
         // Liste aller Panels (visible)
         const panelKeys = Object.keys(layout).filter(k => hcIsPanel(k) && layout[k] && layout[k].visible !== false);
@@ -2273,6 +2305,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         colorInp.type = 'color';
         colorInp.value = panel.bgColor || '#404040';
         colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         colorInp.oninput = (e) => {
             const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
             if (!cur) return;
@@ -2283,21 +2316,27 @@ class HarmonyCompanionEditor extends HTMLElement {
         colorWrap.appendChild(colorInp);
         box.appendChild(colorWrap);
 
-        // Alpha
+        // Transparenz (0% = voll deckend, 100% = unsichtbar)
         const alphaWrap = document.createElement('div');
-        alphaWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:140px;';
+        alphaWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:160px;';
         const alphaLbl = document.createElement('label');
         alphaLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
         const alphaVal = (panel.bgAlpha != null) ? panel.bgAlpha : 0.5;
-        alphaLbl.textContent = 'Transparenz: ' + Math.round(alphaVal * 100) + '%';
+        const transparency = Math.round((1 - alphaVal) * 100);
+        alphaLbl.textContent = 'Transparenz: ' + transparency + '%';
         const alphaInp = document.createElement('input');
         alphaInp.type = 'range';
         alphaInp.min = '0'; alphaInp.max = '100'; alphaInp.step = '1';
-        alphaInp.value = Math.round(alphaVal * 100);
-        alphaInp.style.cssText = 'width:130px;';
+        alphaInp.value = transparency;
+        alphaInp.style.cssText = 'width:140px;touch-action:auto;';
+        // Drag-Events nicht weiterleiten (sonst stoert Editor-Drag das Slider-Verhalten)
+        alphaInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        alphaInp.addEventListener('mousedown',   (e) => e.stopPropagation());
+        alphaInp.addEventListener('touchstart',  (e) => e.stopPropagation());
         alphaInp.oninput = (e) => {
-            const a = Number(e.target.value) / 100;
-            alphaLbl.textContent = 'Transparenz: ' + e.target.value + '%';
+            const t = Number(e.target.value);
+            const a = Math.max(0, Math.min(1, 1 - t / 100));
+            alphaLbl.textContent = 'Transparenz: ' + t + '%';
             const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
             if (!cur) return;
             this._leLayouts[mode][selKey] = { ...cur, bgAlpha: a };
@@ -2318,6 +2357,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         radInp.min = '0'; radInp.max = '40'; radInp.step = '1';
         radInp.value = (panel.radius != null) ? panel.radius : 8;
         radInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        radInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         radInp.onchange = (e) => {
             const v = parseInt(e.target.value, 10);
             const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
@@ -2336,6 +2376,153 @@ class HarmonyCompanionEditor extends HTMLElement {
         btnDel.onclick = () => {
             if (this._leLayouts[mode]) delete this._leLayouts[mode][selKey];
             this._leSelectedPanel = null;
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+        };
+        box.appendChild(btnDel);
+    }
+
+    // Linien-Eigenschaften (Auswahl + Farbe/Länge/Dicke/Rotation + Löschen)
+    _leRenderLineControls(mode) {
+        const box = this._leLineBox;
+        if (!box) return;
+        box.innerHTML = '';
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode] || {};
+        const lineKeys = Object.keys(layout).filter(k => hcIsLine(k) && layout[k] && layout[k].visible !== false);
+        if (lineKeys.length === 0) {
+            box.style.display = 'none';
+            this._leSelectedLine = null;
+            return;
+        }
+        box.style.display = 'flex';
+        if (!this._leSelectedLine || !lineKeys.includes(this._leSelectedLine)) {
+            this._leSelectedLine = lineKeys[0];
+        }
+        const selKey = this._leSelectedLine;
+        const line   = layout[selKey];
+
+        const lblTitle = document.createElement('div');
+        lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
+        lblTitle.textContent = 'Linie:';
+        box.appendChild(lblTitle);
+
+        // Auswahl-Dropdown
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:12px;';
+        lineKeys.forEach((k, i) => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = 'Linie ' + (i + 1) + (k === 'line' ? '' : ' (' + k + ')');
+            if (k === selKey) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = (e) => {
+            this._leSelectedLine = e.target.value;
+            this._leRenderLineControls(mode);
+            this._leRenderGridEls(mode);
+        };
+        box.appendChild(sel);
+
+        // Farbe
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Farbe';
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = line.color || '#888888';
+        colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        colorInp.oninput = (e) => {
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
+            if (!cur) return;
+            this._leLayouts[mode][selKey] = { ...cur, color: e.target.value };
+            this._leRenderGridEls(mode);
+        };
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorInp);
+        box.appendChild(colorWrap);
+
+        // Länge
+        const lenWrap = document.createElement('div');
+        lenWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const lenLbl = document.createElement('label');
+        lenLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        lenLbl.textContent = 'Länge (px)';
+        const lenInp = document.createElement('input');
+        lenInp.type = 'number';
+        lenInp.min = '1'; lenInp.max = '500'; lenInp.step = '1';
+        lenInp.value = line.w || 50;
+        lenInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        lenInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        lenInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
+            if (!cur) return;
+            this._leLayouts[mode][selKey] = { ...cur, w: Math.max(1, Number.isFinite(v) ? v : 50) };
+            this._leRenderGridEls(mode);
+        };
+        lenWrap.appendChild(lenLbl);
+        lenWrap.appendChild(lenInp);
+        box.appendChild(lenWrap);
+
+        // Dicke
+        const thickWrap = document.createElement('div');
+        thickWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const thickLbl = document.createElement('label');
+        thickLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        thickLbl.textContent = 'Dicke (px)';
+        const thickInp = document.createElement('input');
+        thickInp.type = 'number';
+        thickInp.min = '1'; thickInp.max = '20'; thickInp.step = '1';
+        thickInp.value = line.h || 2;
+        thickInp.style.cssText = 'width:50px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        thickInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        thickInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
+            if (!cur) return;
+            this._leLayouts[mode][selKey] = { ...cur, h: Math.max(1, Number.isFinite(v) ? v : 2) };
+            this._leRenderGridEls(mode);
+        };
+        thickWrap.appendChild(thickLbl);
+        thickWrap.appendChild(thickInp);
+        box.appendChild(thickWrap);
+
+        // Rotation
+        const rotWrap = document.createElement('div');
+        rotWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const rotLbl = document.createElement('label');
+        rotLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        rotLbl.textContent = 'Winkel (°)';
+        const rotInp = document.createElement('input');
+        rotInp.type = 'number';
+        rotInp.min = '0'; rotInp.max = '359'; rotInp.step = '1';
+        rotInp.value = (line.rotation != null) ? line.rotation : 0;
+        rotInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        rotInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        rotInp.onchange = (e) => {
+            let v = parseInt(e.target.value, 10);
+            if (!Number.isFinite(v)) v = 0;
+            v = ((v % 360) + 360) % 360;
+            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
+            if (!cur) return;
+            this._leLayouts[mode][selKey] = { ...cur, rotation: v };
+            this._leRenderGridEls(mode);
+        };
+        rotWrap.appendChild(rotLbl);
+        rotWrap.appendChild(rotInp);
+        box.appendChild(rotWrap);
+
+        // Löschen-Button
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Linie löschen';
+        btnDel.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid #c0392b;cursor:pointer;font-size:11px;background:transparent;color:#c0392b;align-self:flex-end;margin-left:auto;';
+        btnDel.onclick = () => {
+            if (this._leLayouts[mode]) delete this._leLayouts[mode][selKey];
+            this._leSelectedLine = null;
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
         };
@@ -2373,6 +2560,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         });
         this._leCheckOverlaps(mode);
         this._leRenderPanelControls(mode);
+        this._leRenderLineControls(mode);
     }
 
     _leCheckOverlaps(mode) {
@@ -2384,7 +2572,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         // Panel ist Hintergrund-Element → wird vom Overlap-Check ausgenommen
         const rects = els.map(el => {
             const key = el.dataset.key;
-            if (hcIsPanel(key)) return null;  // Panels duerfen mit allem ueberlappen
+            if (hcIsPanel(key) || hcIsLine(key)) return null;  // Hintergrund-Elemente
             const def = layout[key];
             if (!def) return null;
             const cat = hcCatalogFor(key, def);
@@ -2415,8 +2603,8 @@ class HarmonyCompanionEditor extends HTMLElement {
             const cat = HC_ELEM_CATALOG[catalogKey];
             const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
             const placed = layout[lKey];
-            // Panel kann mehrfach platziert werden → Palette nie ausgrauen
-            const isPlaced = catalogKey !== 'panel' && placed && placed.visible &&
+            // Panel und Linie können mehrfach platziert werden → Palette nie ausgrauen
+            const isPlaced = catalogKey !== 'panel' && catalogKey !== 'line' && placed && placed.visible &&
                 (lKey !== 'logo' || (
                     catalogKey === 'logo_xl' ? placed.h >= 42
                     : catalogKey === 'logo_l' ? (placed.h >= 35 && placed.h < 42)
@@ -2445,8 +2633,10 @@ class HarmonyCompanionEditor extends HTMLElement {
         const S = this._leScale;
         const isIcon   = (key === 'power' || key === 'logo' || key === 'menu');
         const isPanel  = hcIsPanel(key);
+        const isLine   = hcIsLine(key);
         const isTime   = (key === 'time');
         const isSelectedPanel = isPanel && this._leSelectedPanel === key;
+        const isSelectedLine  = isLine  && this._leSelectedLine === key;
         const w = def.w || cat.w;
         const h = def.h || cat.h;
         // Zeit: rechtsbündig wenn rechts im Display platziert (> 55% der Breite)
@@ -2456,9 +2646,13 @@ class HarmonyCompanionEditor extends HTMLElement {
         const el = document.createElement('div');
         el.className = 'le-el';
         el.dataset.key = key;
-        const bgColor = isPanel ? hcPanelBg(def) : cat.color;
-        const radius  = isPanel ? (((def.radius != null) ? def.radius : 8) + 'px') : '3px';
-        const zIdx    = isPanel ? '1' : '2';
+        const bgColor = isPanel ? hcPanelBg(def)
+                      : isLine  ? (def.color || '#888888')
+                      : cat.color;
+        const radius  = isPanel ? (((def.radius != null) ? def.radius : 8) + 'px')
+                      : isLine  ? '0'
+                      : '3px';
+        const zIdx    = (isPanel || isLine) ? '1' : '2';
         el.style.cssText = [
             'position:absolute;',
             `left:${def.left * S}px;top:${def.top * S}px;`,
@@ -2470,21 +2664,24 @@ class HarmonyCompanionEditor extends HTMLElement {
             pad,
             `border-radius:${radius};cursor:grab;user-select:none;touch-action:none;`,
             `box-sizing:border-box;z-index:${zIdx};overflow:hidden;white-space:nowrap;`,
-            isPanel
-                ? (isSelectedPanel
+            (isPanel || isLine)
+                ? ((isSelectedPanel || isSelectedLine)
                     ? 'border:2px solid #03a9f4;outline:1px dashed rgba(255,255,255,0.5);'
                     : 'border:1px dashed rgba(255,255,255,0.6);')
                 : 'border:1px solid rgba(255,255,255,0.3);',
         ].join('');
         const catalogKey = key === 'logo'
             ? (h >= 42 ? 'logo_xl' : h >= 35 ? 'logo_l' : h >= 30 ? 'logo_m' : 'logo_s')
-            : (isPanel ? 'panel' : key);
+            : (isPanel ? 'panel' : (isLine ? 'line' : key));
         // Label als separates Kind, damit Resize-Handle nicht überschrieben wird
         const labelEl = document.createElement('div');
         labelEl.className = 'le-el-label';
         labelEl.style.pointerEvents = 'none';
         if (isIcon) {
             labelEl.innerHTML = `<div style="line-height:1.1">${cat.label}</div><div style="font-size:9px;opacity:0.8;margin-top:1px">${w}×${h}</div>`;
+        } else if (isLine) {
+            const rot = (def.rotation != null) ? def.rotation : 0;
+            labelEl.textContent = cat.label + ' ' + w + '×' + h + ' (' + rot + '°)';
         } else {
             labelEl.textContent = cat.label + ' ' + w + '×' + h;
         }
@@ -2510,10 +2707,15 @@ class HarmonyCompanionEditor extends HTMLElement {
         el.addEventListener('pointerdown', (e) => {
             if (e.target === resizeH) return;  // Resize hat Vorrang
             e.preventDefault();
-            // Panel-Auswahl beim Klick (für Property-Editor)
+            // Auswahl beim Klick (für Property-Editor)
             if (isPanel && this._leSelectedPanel !== key) {
                 this._leSelectedPanel = key;
                 this._leRenderPanelControls(mode);
+                this._leRenderGridEls(mode);
+            }
+            if (isLine && this._leSelectedLine !== key) {
+                this._leSelectedLine = key;
+                this._leRenderLineControls(mode);
                 this._leRenderGridEls(mode);
             }
             this._leStartDrag(e, catalogKey, el, mode);
@@ -2583,6 +2785,8 @@ class HarmonyCompanionEditor extends HTMLElement {
         const cat = HC_ELEM_CATALOG[catalogKey];
         if (!cat) return;
         const S = this._leScale;
+        // Layout sicher laden (falls Editor-State noch nicht gefüllt)
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
 
         // Layout-Key bestimmen
         const isFromGrid = sourceEl && sourceEl.classList && sourceEl.classList.contains('le-el');
@@ -2591,12 +2795,17 @@ class HarmonyCompanionEditor extends HTMLElement {
             // Bestehendes Element verschieben → Layout-Key aus dataset
             layoutKey = sourceEl.dataset.key || catalogKey;
         } else {
-            // Aus Palette: Panel bekommt neue ID, Logo wird auf 'logo' gemappt
+            // Aus Palette: Panel/Linie bekommen neue ID, Logo wird auf 'logo' gemappt
             if (catalogKey === 'panel') {
                 let n = 1;
                 while (this._leLayouts[mode] && this._leLayouts[mode]['panel_' + n]
                        && this._leLayouts[mode]['panel_' + n].visible !== false) n++;
                 layoutKey = 'panel_' + n;
+            } else if (catalogKey === 'line') {
+                let n = 1;
+                while (this._leLayouts[mode] && this._leLayouts[mode]['line_' + n]
+                       && this._leLayouts[mode]['line_' + n].visible !== false) n++;
+                layoutKey = 'line_' + n;
             } else if (catalogKey.startsWith('logo')) {
                 layoutKey = 'logo';
             } else {
