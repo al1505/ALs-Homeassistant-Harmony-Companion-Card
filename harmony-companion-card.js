@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.21.0";
+const HC_VERSION = "3.21.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -341,7 +341,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     padding: 10px 48px 14px 52px; box-sizing: border-box; overflow: hidden; position: relative;
                 }
                 /* TV-Modus: alle Elemente absolut positioniert → kein Padding noetig */
-                .display-zone.tv-mode { padding: 0; height: 126px; }
+                .display-zone.tv-mode { padding: 0; height: 126px !important; }
                 #display-bg {
                     position: absolute; inset: 0; z-index: 0;
                     background-size: cover; background-position: center center;
@@ -476,7 +476,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 80px; top: 84px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="3"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
                 /* Layout 4: Power+Fernsehen oben, Logo links (60x56), Sender/Titel/Zeit rechts */
@@ -497,7 +497,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 70px; top: 70px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="4"].tv-mode #display-time {
-                    position: absolute; left: 0; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: left; margin: 0;
+                    position: absolute; left: 0; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: left; margin: 0;
                 }
 
                 /* Layout 5: Power+Fernsehen oben, Logo links (70x70), Sender/Titel rechts, Zeit unten-rechts */
@@ -518,7 +518,7 @@ class HarmonyCompanionCard extends HTMLElement {
                     position: absolute; left: 80px; top: 77px; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="5"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
 
                 /* Layout 6: kein Sender; Power+Fernsehen oben, Logo links, Titel+Zeit unten */
@@ -536,10 +536,10 @@ class HarmonyCompanionCard extends HTMLElement {
                     display: none !important;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-title {
-                    position: absolute; left: 0; bottom: 5px; top: auto; width: 200px; line-height: 14px; margin: 0;
+                    position: absolute; left: 0; bottom: 7px; top: auto; width: 200px; line-height: 14px; margin: 0;
                 }
                 #harmony-display[data-layout="6"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 5px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
+                    position: absolute; right: 0; left: auto; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
                 }
                 .match-zone {
                     min-height: 38px; min-width: 38px;
