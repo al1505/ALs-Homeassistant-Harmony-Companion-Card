@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.14.0 (6 Display-Layouts, GUI-Editor, Auto-Derive enigma2_url, Channel-Change-Fix)
+// Version: 3.15.0 (Layout-2+3-Korrektur: Logo+Power zentriert wie Layout-1, Zeit absolut)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.14.0";
+const HC_VERSION = "3.15.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -409,25 +409,23 @@ class HarmonyCompanionCard extends HTMLElement {
                    Default (kein Attribut) = Layout 1 (kompakt).
                    ============================================================ */
 
-                /* Layout 2 + 3: Gestapelt, Logo oben-links klein, Power oben */
-                #harmony-display[data-layout="2"],
-                #harmony-display[data-layout="3"] { padding: 8px 48px 28px 64px; min-height: 120px !important; }
-                #harmony-display[data-layout="2"] #display-logo,
-                #harmony-display[data-layout="3"] #display-logo {
-                    left: 8px; top: 28px; transform: none; width: 44px; height: 44px;
-                }
-                #harmony-display[data-layout="2"] #display-power,
-                #harmony-display[data-layout="3"] #display-power {
-                    top: 6px; transform: none; bottom: auto;
-                }
-                /* Layout 2: Zeit unten-links */
+                /* Layout 2 + 3: Logo + Power wie Layout 1 (vertikal zentriert links).
+                   Text-Bereich identisch zu Layout 1 (padding-left: 110px via .tv-mode).
+                   Unterschied: Zeit absolut am unteren Rand positioniert.
+                   Extra padding-bottom damit die Textzeilen nicht ueber die Zeit rutschen. */
+                #harmony-display[data-layout="2"].tv-mode,
+                #harmony-display[data-layout="3"].tv-mode { padding-bottom: 28px; }
+                /* Logo: gleiche Position wie Layout 1 – kein Override noetig
+                   (default CSS: left:50px, top:50%, transform:translateY(-50%)) */
+                /* Power-Button: gleiche Position wie Layout 1 – kein Override noetig */
+                /* Layout 2: Zeit absolut ganz unten-links (Hoehe wie Power-Button) */
                 #harmony-display[data-layout="2"] #display-time {
-                    position: absolute; bottom: 8px; left: 64px;
+                    position: absolute !important; bottom: 8px; left: 8px;
                     right: auto; text-align: left; margin-top: 0;
                 }
-                /* Layout 3: Zeit unten-rechts */
+                /* Layout 3: Zeit absolut ganz unten-rechts */
                 #harmony-display[data-layout="3"] #display-time {
-                    position: absolute; bottom: 8px; right: 8px;
+                    position: absolute !important; bottom: 8px; right: 8px;
                     left: auto; text-align: right; margin-top: 0;
                 }
 
@@ -1192,16 +1190,17 @@ class HarmonyCompanionCard extends HTMLElement {
         }
 
         // Power-Button-Position:
-        // Layout 1: Idle=zentriert, Playing=unten-links
-        // Layout 2-6: immer oben-links (wird per CSS gesteuert; inline-Reset)
+        // Layout 1-3: Power-Button wie Layout 1 (vertikal zentriert / Idle-zentriert, Playing-unten-links)
+        // Layout 4-6: Power-Button oben-links (CSS-gesteuert, top:6px)
         if (pwrEl) {
-            const useTopLayout = ['2','3','4','5','6'].includes(layout);
+            const useTopLayout = ['4','5','6'].includes(layout);
             if (useTopLayout) {
                 // CSS uebernimmt Positionierung (top:6px), Inline-Stile zuruecksetzen
                 pwrEl.style.top       = '';
                 pwrEl.style.bottom    = '';
                 pwrEl.style.transform = '';
             } else {
+                // Layouts 1-3: Standard-Verhalten (zentriert im Idle, unten-links beim Spielen)
                 pwrEl.style.top       = isPlaying ? '' : '50%';
                 pwrEl.style.bottom    = isPlaying ? '12px' : '';
                 pwrEl.style.transform = isPlaying ? '' : 'translateY(-50%)';
@@ -1922,33 +1921,36 @@ class HarmonyCompanionEditor extends HTMLElement {
         );
     }
     _layoutSvg2() {
-        // Gestapelt, Zeit unten-links
+        // Wie Layout 1: Logo + Power vertikal zentriert links, Text rechts davon.
+        // Zusatz: Fernsehen neben Logo, Zeit absolut ganz unten-links.
         return this._layoutSvgBase(
-            '<rect x="30" y="0" width="50" height="44" fill="#1a3a2a" opacity="0.5"/>' +
-            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
-            // activity top
-            '<rect x="14" y="4" width="22" height="3" rx="1" fill="#888"/>' +
-            // logo small top-left
-            '<rect x="6" y="12" width="14" height="14" rx="2" fill="#3a6a9a"/>' +
+            // background right
+            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.7"/>' +
+            // power btn: centered left
+            '<circle cx="6" cy="22" r="4" fill="#555"/>' +
+            // logo: centered vertically left (like layout 1)
+            '<rect x="12" y="14" width="16" height="16" rx="2" fill="#3a6a9a"/>' +
+            // activity (Fernsehen): next to logo, vertically centered
+            '<rect x="32" y="18" width="16" height="3" rx="1" fill="#888"/>' +
             // channel
-            '<rect x="6" y="30" width="30" height="5" rx="1" fill="#ccc"/>' +
+            '<rect x="32" y="24" width="24" height="5" rx="1" fill="#ccc"/>' +
             // title
-            '<rect x="6" y="38" width="22" height="3" rx="1" fill="#888"/>' +
-            // time bottom-left
-            '<rect x="6" y="38" width="16" height="3" rx="1" fill="#e07020"/>'
+            '<rect x="32" y="32" width="18" height="3" rx="1" fill="#888"/>' +
+            // time: absolute bottom-LEFT (aligned with power btn)
+            '<rect x="4" y="38" width="14" height="3" rx="1" fill="#e07020"/>'
         );
     }
     _layoutSvg3() {
-        // Gestapelt, Zeit unten-rechts
+        // Wie Layout 2 aber Zeit unten-rechts
         return this._layoutSvgBase(
-            '<rect x="30" y="0" width="50" height="44" fill="#1a3a2a" opacity="0.5"/>' +
-            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
-            '<rect x="14" y="4" width="22" height="3" rx="1" fill="#888"/>' +
-            '<rect x="6" y="12" width="14" height="14" rx="2" fill="#3a6a9a"/>' +
-            '<rect x="6" y="30" width="30" height="5" rx="1" fill="#ccc"/>' +
-            '<rect x="6" y="38" width="22" height="3" rx="1" fill="#888"/>' +
-            // time bottom-RIGHT
-            '<rect x="56" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
+            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.7"/>' +
+            '<circle cx="6" cy="22" r="4" fill="#555"/>' +
+            '<rect x="12" y="14" width="16" height="16" rx="2" fill="#3a6a9a"/>' +
+            '<rect x="32" y="18" width="16" height="3" rx="1" fill="#888"/>' +
+            '<rect x="32" y="24" width="24" height="5" rx="1" fill="#ccc"/>' +
+            '<rect x="32" y="32" width="18" height="3" rx="1" fill="#888"/>' +
+            // time: absolute bottom-RIGHT
+            '<rect x="58" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
         );
     }
     _layoutSvg4() {
