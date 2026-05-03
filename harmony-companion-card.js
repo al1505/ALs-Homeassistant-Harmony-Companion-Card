@@ -2,7 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 3.21.0 (bottom:5px, Display-Layout in Enigma2, Kodi media-mode, URL-Feld+Camera entfernt)
+// Version: 4.0.0 (visueller Drag-and-Drop Layout-Editor fuer TV + Kodi)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "3.21.2";
+const HC_VERSION = "4.0.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -23,6 +23,56 @@ const escHtml = (str) => {
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[m]));
 };
+
+// ── Layout-Editor: Raster-Konstanten ─────────────────────────────────────────
+const HC_GRID_COLS = 32, HC_COL_W = 10;   // 32 Spalten à 10 px = 320 px
+const HC_GRID_ROWS = 18, HC_ROW_H = 7;    // 18 Zeilen  à  7 px = 126 px
+const HC_DISP_W    = HC_GRID_COLS * HC_COL_W;  // 320 px
+const HC_DISP_H    = HC_GRID_ROWS * HC_ROW_H;  // 126 px
+
+// Element-Katalog: Bezeichnung, Standardgrösse, Farbe für den Editor
+const HC_ELEM_CATALOG = {
+    power:    { label: 'Power',    w: 30,  h: 28, color: '#b52929', fg: '#fff' },
+    logo_l:   { label: 'Logo L',   w: 70,  h: 70, color: '#2255aa', fg: '#fff' },
+    logo_s:   { label: 'Logo S',   w: 40,  h: 40, color: '#3366bb', fg: '#fff' },
+    activity: { label: 'Activity', w: 120, h: 14, color: '#885500', fg: '#fff' },
+    channel:  { label: 'Sender',   w: 120, h: 21, color: '#1a6633', fg: '#fff' },
+    title:    { label: 'Titel',    w: 200, h: 14, color: '#7a1f5a', fg: '#fff' },
+    time:     { label: 'Zeit',     w: 120, h: 14, color: '#884400', fg: '#fff' },
+};
+
+// Verfügbare Elemente je Modus (Reihenfolge = Palette-Reihenfolge)
+const HC_MODE_ELEMS = {
+    tv:    ['power', 'logo_l', 'logo_s', 'activity', 'channel', 'title', 'time'],
+    media: ['power', 'activity', 'title', 'time'],
+};
+
+// Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück (logo → logo_l/logo_s je h)
+function hcCatalogFor(layoutKey, def) {
+    if (layoutKey === 'logo') return HC_ELEM_CATALOG[def && def.h >= 60 ? 'logo_l' : 'logo_s'];
+    return HC_ELEM_CATALOG[layoutKey] || null;
+}
+
+// Standard-Layouts: Startpunkt für neuen Editor-Slot (= bisheriges Layout 1)
+function hcDefaultLayout(mode) {
+    if (mode === 'tv') return {
+        power:    { left: 0,   top: 49, w: 30,  h: 28, visible: true },
+        logo:     { left: 40,  top: 28, w: 70,  h: 70, visible: true },
+        activity: { left: 120, top: 21, w: 120, h: 14, visible: true },
+        channel:  { left: 120, top: 42, w: 120, h: 21, visible: true },
+        title:    { left: 120, top: 70, w: 200, h: 14, visible: true },
+        time:     { left: 120, top: 91, w: 120, h: 14, visible: true },
+    };
+    // Kodi / Media-Modus
+    return {
+        power:    { left: 0,  top: 0,   w: 30,  h: 28, visible: true },
+        logo:     { visible: false },
+        channel:  { visible: false },
+        activity: { left: 40, top: 7,   w: 120, h: 14, visible: true },
+        title:    { left: 0,  top: 91,  w: 280, h: 14, visible: true },
+        time:     { left: 0,  top: 105, w: 280, h: 14, visible: true },
+    };
+}
 
 // Fallback-TV-Icon (SVG data-URI) fuer den Logo-Bereich wenn kein Picon geladen werden kann.
 const HC_TV_ICON = 'url("data:image/svg+xml,' + encodeURIComponent(
@@ -403,153 +453,8 @@ class HarmonyCompanionCard extends HTMLElement {
                 }
                 #display-progress-fill { height: 100%; width: 0%; background: rgba(255,255,255,0.85); transition: width 0.8s linear; }
                 .display-error { color: #cc0000; font-size: 13px; }
-                /* Kodi / Nicht-TV Modus: Aktivitaets-Label oben-links neben Power-Button */
-                .display-zone.media-mode #display-power {
-                    position: absolute; left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                .display-zone.media-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 160px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0; z-index: 4;
-                }
-                .display-zone.media-mode #display-channel { display: none !important; }
-                .display-zone.media-mode #display-title {
-                    position: absolute; left: 0; bottom: 21px; top: auto; width: 280px;
-                    line-height: 14px; margin: 0; z-index: 4;
-                }
-                .display-zone.media-mode #display-time {
-                    position: absolute; left: 0; bottom: 7px; top: auto; width: 280px;
-                    line-height: 14px; text-align: left; margin: 0; z-index: 4;
-                }
-                /* ============================================================
-                   DISPLAY LAYOUTS 1-6 (data-layout Attribut)
-                   Koordinaten aus Layout-Excel: Raster 32x18, 10px/Sp, 7px/Z = 320x126px
-                   ============================================================ */
-
-                /* Layout 1: Power links-mitte, Logo daneben, Textblock rechts */
-                #harmony-display[data-layout="1"].tv-mode #display-power {
-                    left: 0; top: 49px; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                #harmony-display[data-layout="1"].tv-mode #display-logo {
-                    left: 40px; top: 28px; width: 70px; height: 70px; transform: none;
-                }
-                #harmony-display[data-layout="1"].tv-mode #display-activity {
-                    position: absolute; left: 120px; top: 21px; width: 120px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
-                }
-                #harmony-display[data-layout="1"].tv-mode #display-channel {
-                    position: absolute; left: 120px; top: 42px; width: 120px; line-height: 21px; margin: 0;
-                }
-                #harmony-display[data-layout="1"].tv-mode #display-title {
-                    position: absolute; left: 120px; top: 70px; width: 200px; line-height: 14px; margin: 0;
-                }
-                #harmony-display[data-layout="1"].tv-mode #display-time {
-                    position: absolute; left: 120px; top: 91px; width: 120px; line-height: 14px; text-align: left; margin: 0;
-                }
-
-                /* Layout 2: Power+Fernsehen oben, Logo links, Sender/Titel/Zeit rechts */
-                #harmony-display[data-layout="2"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                #harmony-display[data-layout="2"].tv-mode #display-logo {
-                    left: 0; top: 35px; width: 70px; height: 70px; transform: none;
-                }
-                #harmony-display[data-layout="2"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
-                }
-                #harmony-display[data-layout="2"].tv-mode #display-channel {
-                    position: absolute; left: 80px; top: 42px; width: 120px; line-height: 21px; margin: 0;
-                }
-                #harmony-display[data-layout="2"].tv-mode #display-title {
-                    position: absolute; left: 80px; top: 70px; width: 200px; line-height: 14px; margin: 0;
-                }
-                #harmony-display[data-layout="2"].tv-mode #display-time {
-                    position: absolute; left: 80px; top: 91px; width: 120px; line-height: 14px; text-align: left; margin: 0;
-                }
-
-                /* Layout 3: wie Layout 2, Zeit unten-rechts */
-                #harmony-display[data-layout="3"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                #harmony-display[data-layout="3"].tv-mode #display-logo {
-                    left: 0; top: 28px; width: 70px; height: 70px; transform: none;
-                }
-                #harmony-display[data-layout="3"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
-                }
-                #harmony-display[data-layout="3"].tv-mode #display-channel {
-                    position: absolute; left: 80px; top: 56px; width: 120px; line-height: 21px; margin: 0;
-                }
-                #harmony-display[data-layout="3"].tv-mode #display-title {
-                    position: absolute; left: 80px; top: 84px; width: 200px; line-height: 14px; margin: 0;
-                }
-                #harmony-display[data-layout="3"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
-                }
-
-                /* Layout 4: Power+Fernsehen oben, Logo links (60x56), Sender/Titel/Zeit rechts */
-                #harmony-display[data-layout="4"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                #harmony-display[data-layout="4"].tv-mode #display-logo {
-                    left: 0; top: 35px; width: 60px; height: 56px; transform: none;
-                }
-                #harmony-display[data-layout="4"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
-                }
-                #harmony-display[data-layout="4"].tv-mode #display-channel {
-                    position: absolute; left: 70px; top: 42px; width: 120px; line-height: 21px; margin: 0;
-                }
-                #harmony-display[data-layout="4"].tv-mode #display-title {
-                    position: absolute; left: 70px; top: 70px; width: 200px; line-height: 14px; margin: 0;
-                }
-                #harmony-display[data-layout="4"].tv-mode #display-time {
-                    position: absolute; left: 0; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: left; margin: 0;
-                }
-
-                /* Layout 5: Power+Fernsehen oben, Logo links (70x70), Sender/Titel rechts, Zeit unten-rechts */
-                #harmony-display[data-layout="5"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                #harmony-display[data-layout="5"].tv-mode #display-logo {
-                    left: 0; top: 35px; width: 70px; height: 70px; transform: none;
-                }
-                #harmony-display[data-layout="5"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
-                }
-                #harmony-display[data-layout="5"].tv-mode #display-channel {
-                    position: absolute; left: 80px; top: 49px; width: 120px; line-height: 21px; margin: 0;
-                }
-                #harmony-display[data-layout="5"].tv-mode #display-title {
-                    position: absolute; left: 80px; top: 77px; width: 200px; line-height: 14px; margin: 0;
-                }
-                #harmony-display[data-layout="5"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
-                }
-
-                /* Layout 6: kein Sender; Power+Fernsehen oben, Logo links, Titel+Zeit unten */
-                #harmony-display[data-layout="6"].tv-mode #display-power {
-                    left: 0; top: 0; width: 30px; height: 28px; transform: none; bottom: auto;
-                }
-                #harmony-display[data-layout="6"].tv-mode #display-logo {
-                    left: 0; top: 35px; width: 70px; height: 70px; transform: none;
-                }
-                #harmony-display[data-layout="6"].tv-mode #display-activity {
-                    position: absolute; left: 40px; top: 7px; width: 120px; height: 14px; line-height: 14px;
-                    display: flex !important; align-items: center; font-size: 11px; margin: 0;
-                }
-                #harmony-display[data-layout="6"].tv-mode #display-channel {
-                    display: none !important;
-                }
-                #harmony-display[data-layout="6"].tv-mode #display-title {
-                    position: absolute; left: 0; bottom: 7px; top: auto; width: 200px; line-height: 14px; margin: 0;
-                }
-                #harmony-display[data-layout="6"].tv-mode #display-time {
-                    position: absolute; right: 0; left: auto; bottom: 7px; top: auto; width: 120px; line-height: 14px; text-align: right; margin: 0;
-                }
+                /* Layout-Positionierung wird vollstaendig per _applyDisplayLayout() als Inline-Styles gesetzt.
+                   Statische [data-layout] / media-mode CSS-Positionierungsregeln entfallen ab v4. */
                 .match-zone {
                     min-height: 38px; min-width: 38px;
                     display: flex; align-items: center; justify-content: center;
@@ -1156,10 +1061,6 @@ class HarmonyCompanionCard extends HTMLElement {
         const isTVMode  = isTVAct && !!this._tvData;
         const tvData    = isTVMode ? this._tvData : null;
         const enigma2B  = (this.config.enigma2_url || '').replace(/\/+$/, '');
-        // Layout-Klasse (1-6, Default 1)
-        const layout = String(this.config.display_layout || '1');
-        if (display) display.dataset.layout = layout;
-
         // HA-Entity-Attribute (immer verfuegbar wenn activity_media gesetzt)
         const haAttrs   = (mediaStateObj && mediaStateObj.attributes) ? mediaStateObj.attributes : null;
 
@@ -1275,20 +1176,8 @@ class HarmonyCompanionCard extends HTMLElement {
             if (timeEl)  timeEl.style.display  = 'none';
         }
 
-        // CSS steuert alle Positionen im TV-Modus via data-layout + .tv-mode.
-        // Inline-Stile zuruecksetzen, damit CSS greift.
-        actEl.style.position   = '';
-        actEl.style.top        = '';
-        actEl.style.height     = '';
-        actEl.style.alignItems = '';
-        actEl.style.left       = '';
-        actEl.style.zIndex     = '';
-        actEl.style.maxWidth   = '';
-        if (pwrEl) {
-            pwrEl.style.top       = '';
-            pwrEl.style.bottom    = '';
-            pwrEl.style.transform = '';
-        }
+        // Layout-Inline-Styles zuruecksetzen (Vorbereitung fuer _applyDisplayLayout).
+        this._clearDisplayLayout(display);
 
         // Drei-Punkte (nur wenn Media-Entity konfiguriert)
         if (dotsEl) dotsEl.style.display = mediaEid ? 'flex' : 'none';
@@ -1300,6 +1189,10 @@ class HarmonyCompanionCard extends HTMLElement {
         const useMediaMode   = !isTVAct && isPlaying;
         display.classList.toggle('tv-mode',    useTVLayout);
         display.classList.toggle('media-mode', useMediaMode);
+
+        // Layout-Inline-Styles aus Config anwenden (TV oder Kodi)
+        if      (useTVLayout)    this._applyDisplayLayout(display, 'tv');
+        else if (useMediaMode)   this._applyDisplayLayout(display, 'media');
 
         // ---- Restzeit-Anzeige (1h 34m bis 21:35) ----
         // Quellen: OpenWebIF endStr ODER HA-Entity media_duration/_position
@@ -1657,6 +1550,52 @@ class HarmonyCompanionCard extends HTMLElement {
         this._grabRefreshBase = null;
     }
 
+    // Setzt alle Layout-Inline-Styles zurück, damit CSS-Basisregeln greifen (Idle-Modus).
+    _clearDisplayLayout(display) {
+        const props = ['position','left','top','right','bottom','transform',
+                       'width','height','lineHeight','margin','zIndex','overflow'];
+        ['display-power','display-logo','display-activity',
+         'display-channel','display-title','display-time'].forEach(id => {
+            const el = display.querySelector('#' + id);
+            if (!el) return;
+            props.forEach(p => { el.style[p] = ''; });
+        });
+    }
+
+    // Wendet Layout-Positionen aus Config (tv_layout / media_layout) als Inline-Styles an.
+    _applyDisplayLayout(display, mode) {
+        const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
+        const stored = (this._config && this._config[cfgKey]) || {};
+        const defs   = hcDefaultLayout(mode);
+        const layout = {};
+        new Set([...Object.keys(defs), ...Object.keys(stored)])
+            .forEach(k => { layout[k] = { ...(defs[k] || {}), ...(stored[k] || {}) }; });
+
+        const idMap = {
+            power: 'display-power', logo: 'display-logo',
+            activity: 'display-activity', channel: 'display-channel',
+            title: 'display-title', time: 'display-time',
+        };
+        Object.entries(layout).forEach(([key, def]) => {
+            const el = display.querySelector('#' + (idMap[key] || ''));
+            if (!el) return;
+            if (def.visible === false) { el.style.display = 'none'; return; }
+            el.style.position  = 'absolute';
+            el.style.left      = def.left + 'px';
+            el.style.top       = def.top  + 'px';
+            el.style.right     = 'auto';
+            el.style.bottom    = 'auto';
+            el.style.transform = 'none';
+            el.style.margin    = '0';
+            el.style.zIndex    = '3';
+            el.style.width     = def.w + 'px';
+            el.style.height    = def.h + 'px';
+            el.style.overflow  = 'hidden';
+            if (key !== 'logo' && key !== 'power') el.style.lineHeight = def.h + 'px';
+            if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
+        });
+    }
+
     disconnectedCallback() {
         if (this._fadeTimer)    { clearTimeout(this._fadeTimer);      this._fadeTimer    = null; }
         if (this._progressTimer){ clearInterval(this._progressTimer); this._progressTimer = null; }
@@ -1714,6 +1653,8 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!this._config.buttons) this._config.buttons = { global: {} };
         if (!this._config.dynamic_slots) this._config.dynamic_slots = {};
         if (!this._config.activity_media) this._config.activity_media = {};
+        // Editor-Zustand bei neuer Config zurücksetzen
+        this._leLayouts = {};
 
         if (this._loaded) { this._tryBuild(); return; }
         if (this._loading) return;
@@ -1937,121 +1878,246 @@ class HarmonyCompanionEditor extends HTMLElement {
         return det;
     }
 
-    // -------- SECTION: DISPLAY LAYOUT --------
+    // -------- SECTION: DISPLAY LAYOUT (visueller Editor) --------
     _sectionLayout() {
+        if (!this._leMode)    this._leMode    = 'tv';
+        if (!this._leLayouts) this._leLayouts = {};
+
         const { det, body } = this._details('sec-layout', 'Display-Layout');
 
-        const info = document.createElement('div');
-        info.style.cssText = 'font-size:12px; color:var(--secondary-text-color); margin-bottom:12px; line-height:1.5;';
-        info.textContent = 'Waehle, wie Kanal, Titel, Logo und Restzeit im Display angeordnet werden.';
-        body.appendChild(info);
-
-        const current = String(this._config.display_layout || '1');
-
-        // SVG-Miniatur-Vorschau pro Layout
-        const layouts = [
-            { id: '1', label: 'Kompakt (Logo + Text + Hintergrund)',   svg: this._layoutSvg1() },
-            { id: '2', label: 'Grosses Logo – Zeit unten links',         svg: this._layoutSvg2() },
-            { id: '3', label: 'Grosses Logo – Zeit unten rechts',       svg: this._layoutSvg3() },
-            { id: '4', label: 'Grosses Logo – Zeit inline',             svg: this._layoutSvg4() },
-            { id: '5', label: 'Grosses Logo – Zeit unten rechts',       svg: this._layoutSvg5() },
-            { id: '6', label: 'Grosses Logo – Zeit u. rechts (Var. 2)', svg: this._layoutSvg6() },
-        ];
-
-        const grid = document.createElement('div');
-        grid.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:10px;';
-
-        layouts.forEach(l => {
-            const card = document.createElement('div');
-            const isActive = (current === l.id);
-            card.style.cssText = [
-                'border:2px solid', isActive ? 'var(--primary-color,#03a9f4)' : 'var(--divider-color,#e0e0e0)',
-                '; border-radius:8px; padding:8px; cursor:pointer; transition:border-color 0.2s;',
-                'background:', isActive ? 'var(--primary-color-light, rgba(3,169,244,0.08))' : 'transparent',
-            ].join(' ');
-            card.innerHTML = l.svg + '<div style="font-size:11px; margin-top:4px; text-align:center; line-height:1.3;">' + escHtml(l.label) + '</div>';
-            card.onclick = () => {
-                this._patchTop('display_layout', l.id);
-                this._buildDOM();
-            };
-            grid.appendChild(card);
+        // Tabs TV / Kodi
+        const tabBar = document.createElement('div');
+        tabBar.style.cssText = 'display:flex;gap:8px;margin-bottom:12px;';
+        ['tv', 'media'].forEach(m => {
+            const b = document.createElement('button');
+            b.textContent = m === 'tv' ? 'Fernsehen (TV)' : 'Kodi';
+            const act = m === this._leMode;
+            b.style.cssText = 'padding:5px 14px;border-radius:16px;border:2px solid;cursor:pointer;font-size:12px;transition:all .15s;' +
+                (act ? 'background:var(--primary-color,#03a9f4);color:#fff;border-color:var(--primary-color,#03a9f4);'
+                      : 'background:transparent;color:inherit;border-color:var(--divider-color,#ccc);');
+            b.onclick = () => { this._leMode = m; this._buildDOM(); };
+            tabBar.appendChild(b);
         });
+        body.appendChild(tabBar);
+
+        const mode = this._leMode;
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+
+        // Grid 320 × 126 px
+        const grid = document.createElement('div');
+        grid.style.cssText = [
+            `width:${HC_DISP_W}px;height:${HC_DISP_H}px;`,
+            'position:relative;overflow:visible;',
+            'background:#1c1c2e;',
+            'background-image:',
+            `linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),`,
+            `linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px);`,
+            `background-size:${HC_COL_W}px ${HC_ROW_H}px;`,
+            'border:1px solid rgba(255,255,255,0.25);border-radius:4px;',
+            'box-sizing:border-box;cursor:crosshair;flex-shrink:0;',
+        ].join('');
+        this._leGridEl = grid;
+
+        const coordTip = document.createElement('div');
+        coordTip.style.cssText = 'font-size:10px;color:var(--secondary-text-color);min-height:14px;margin-top:3px;font-family:monospace;';
+        this._leCoordTip = coordTip;
+
+        grid.addEventListener('pointermove', (e) => {
+            if (this._leDrag) return;
+            const r = grid.getBoundingClientRect();
+            const gx = Math.max(0, Math.min(HC_DISP_W, Math.round((e.clientX - r.left) / HC_COL_W) * HC_COL_W));
+            const gy = Math.max(0, Math.min(HC_DISP_H, Math.round((e.clientY - r.top)  / HC_ROW_H) * HC_ROW_H));
+            coordTip.textContent = `x: ${gx}px  y: ${gy}px`;
+        });
+        grid.addEventListener('pointerleave', () => { if (!this._leDrag) coordTip.textContent = ''; });
+
+        this._leRenderGridEls(mode);
         body.appendChild(grid);
+        body.appendChild(coordTip);
+
+        // Palette
+        const palLbl = document.createElement('div');
+        palLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:10px;margin-bottom:5px;';
+        palLbl.textContent = 'Elemente auf das Raster ziehen · vom Raster ziehen zum Entfernen:';
+        body.appendChild(palLbl);
+
+        const palette = document.createElement('div');
+        palette.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;';
+        this._lePaletteEl = palette;
+        this._leRenderPaletteItems(mode, palette);
+        body.appendChild(palette);
+
+        // Aktions-Buttons
+        const actRow = document.createElement('div');
+        actRow.style.cssText = 'display:flex;gap:8px;';
+
+        const btnReset = document.createElement('button');
+        btnReset.textContent = 'Zurücksetzen';
+        btnReset.style.cssText = 'padding:6px 12px;border-radius:6px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;background:transparent;color:inherit;';
+        btnReset.onclick = () => {
+            this._leLayouts[mode] = hcDefaultLayout(mode);
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+        };
+
+        const btnApply = document.createElement('button');
+        btnApply.textContent = 'Übernehmen';
+        btnApply.style.cssText = 'padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--primary-color,#03a9f4);color:#fff;';
+        btnApply.onclick = () => {
+            const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
+            this._patchTop(cfgKey, this._leLayouts[mode] || this._leLoadLayout(mode));
+        };
+
+        actRow.appendChild(btnReset);
+        actRow.appendChild(btnApply);
+        body.appendChild(actRow);
+
         return det;
     }
 
-    // SVG-Miniaturvorschauen fuer jedes Layout (80x44 px)
-    // Farben: dunkelgrau=Hintergrund, hellgrau=Text, blau=Logo, orange=Zeit
-    _layoutSvgBase(content) {
-        return '<svg viewBox="0 0 80 44" width="100%" style="display:block; border-radius:4px; background:#2a2a2a;">' + content + '</svg>';
+    _leLoadLayout(mode) {
+        const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
+        const stored = this._config && this._config[cfgKey];
+        const def = hcDefaultLayout(mode);
+        if (!stored) return def;
+        const merged = { ...def };
+        Object.keys(stored).forEach(k => { merged[k] = { ...(def[k] || {}), ...stored[k] }; });
+        return merged;
     }
-    _layoutSvg1() {
-        // Kompakt: Logo links, Text mittig, Background rechts
-        return this._layoutSvgBase(
-            // background
-            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.7"/>' +
-            // power btn
-            '<circle cx="6" cy="22" r="4" fill="#555"/>' +
-            // logo
-            '<rect x="12" y="14" width="16" height="16" rx="2" fill="#3a6a9a"/>' +
-            // activity
-            '<rect x="32" y="8" width="20" height="3" rx="1" fill="#888"/>' +
-            // channel
-            '<rect x="32" y="15" width="24" height="5" rx="1" fill="#ccc"/>' +
-            // title
-            '<rect x="32" y="24" width="18" height="3" rx="1" fill="#888"/>' +
-            // time
-            '<rect x="32" y="31" width="12" height="3" rx="1" fill="#e07020"/>'
-        );
+
+    _leRenderGridEls(mode) {
+        const grid = this._leGridEl;
+        if (!grid) return;
+        grid.querySelectorAll('.le-el').forEach(el => el.remove());
+        const layout = this._leLayouts[mode] || (this._leLayouts[mode] = this._leLoadLayout(mode));
+        Object.entries(layout).forEach(([key, def]) => {
+            if (!def.visible) return;
+            const cat = hcCatalogFor(key, def);
+            if (!cat) return;
+            grid.appendChild(this._leCreateEl(key, def, cat, mode));
+        });
     }
-    // Gemeinsame Basis fuer Layouts 2-6 (Power oben-links, Fernsehen daneben, grosses Logo links)
-    _layoutSvgL2to6base(timeSvg) {
-        return this._layoutSvgBase(
-            // background right half
-            '<rect x="40" y="0" width="40" height="44" fill="#1a3a2a" opacity="0.5"/>' +
-            // power btn: top-left
-            '<circle cx="6" cy="6" r="4" fill="#555"/>' +
-            // activity "Fernsehen": direkt rechts neben Power-Button
-            '<rect x="14" y="4" width="18" height="3" rx="1" fill="#888" opacity="0.7"/>' +
-            // logo: gross, vertikal zentriert links
-            '<rect x="6" y="10" width="22" height="24" rx="2" fill="#3a6a9a"/>' +
-            // channel name
-            '<rect x="32" y="12" width="24" height="5" rx="1" fill="#ccc"/>' +
-            // title
-            '<rect x="32" y="21" width="18" height="3" rx="1" fill="#888"/>' +
-            // zeitanzeige (layout-spezifisch)
-            timeSvg
-        );
+
+    _leRenderPaletteItems(mode, container) {
+        if (!container) return;
+        container.innerHTML = '';
+        const layout = this._leLayouts[mode] || {};
+        HC_MODE_ELEMS[mode].forEach(catalogKey => {
+            const cat = HC_ELEM_CATALOG[catalogKey];
+            const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+            const placed = layout[lKey];
+            const isPlaced = placed && placed.visible &&
+                (lKey !== 'logo' || (catalogKey === 'logo_l' ? placed.h >= 60 : placed.h < 60));
+            const item = document.createElement('div');
+            item.style.cssText = [
+                'padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);',
+                `background:${cat.color};color:${cat.fg};`,
+                'font-size:10px;cursor:grab;user-select:none;white-space:nowrap;',
+                `opacity:${isPlaced ? '0.38' : '1'};transition:opacity .15s;`,
+            ].join('');
+            item.textContent = cat.label + ' ' + cat.w + '×' + cat.h;
+            item.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                this._leStartDrag(e, catalogKey, item, mode);
+            });
+            container.appendChild(item);
+        });
     }
-    _layoutSvg2() {
-        // Power oben-links + Fernsehen, grosses Logo, Zeit unten-links
-        return this._layoutSvgL2to6base(
-            '<rect x="6" y="38" width="16" height="3" rx="1" fill="#e07020"/>'
-        );
+
+    _leCreateEl(key, def, cat, mode) {
+        const el = document.createElement('div');
+        el.className = 'le-el';
+        el.dataset.key = key;
+        el.style.cssText = [
+            'position:absolute;',
+            `left:${def.left}px;top:${def.top}px;`,
+            `width:${cat.w}px;height:${cat.h}px;`,
+            `background:${cat.color};color:${cat.fg};`,
+            'font-size:8px;font-weight:bold;',
+            'display:flex;align-items:center;justify-content:center;text-align:center;',
+            'border-radius:2px;cursor:grab;user-select:none;',
+            'box-sizing:border-box;z-index:2;overflow:hidden;',
+            'line-height:1.15;white-space:pre-line;',
+        ].join('');
+        const catalogKey = key === 'logo' ? (def.h >= 60 ? 'logo_l' : 'logo_s') : key;
+        el.textContent = cat.label + '\n' + cat.w + '×' + cat.h;
+        el.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            this._leStartDrag(e, catalogKey, el, mode);
+        });
+        return el;
     }
-    _layoutSvg3() {
-        // Power oben-links + Fernsehen, grosses Logo, Zeit unten-rechts
-        return this._layoutSvgL2to6base(
-            '<rect x="56" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
-        );
+
+    _leStartDrag(e, catalogKey, sourceEl, mode) {
+        const cat = HC_ELEM_CATALOG[catalogKey];
+        if (!cat) return;
+        const srcRect = sourceEl.getBoundingClientRect();
+        const offsetX = e.clientX - srcRect.left;
+        const offsetY = e.clientY - srcRect.top;
+
+        const ghost = document.createElement('div');
+        ghost.style.cssText = [
+            'position:fixed;pointer-events:none;z-index:99999;',
+            `width:${cat.w}px;height:${cat.h}px;`,
+            `background:${cat.color};color:${cat.fg};`,
+            'opacity:0.82;border-radius:3px;',
+            'border:2px dashed rgba(255,255,255,0.75);',
+            'font-size:8px;font-weight:bold;',
+            'display:flex;align-items:center;justify-content:center;text-align:center;',
+            'box-sizing:border-box;white-space:pre-line;line-height:1.15;',
+            `left:${e.clientX - offsetX}px;top:${e.clientY - offsetY}px;`,
+        ].join('');
+        ghost.textContent = cat.label + '\n' + cat.w + '×' + cat.h;
+        document.body.appendChild(ghost);
+        this._leDrag = { catalogKey, ghost, offsetX, offsetY, mode };
+
+        const onMove = (ev) => {
+            ghost.style.left = (ev.clientX - offsetX) + 'px';
+            ghost.style.top  = (ev.clientY - offsetY) + 'px';
+            if (this._leGridEl && this._leCoordTip) {
+                const gr = this._leGridEl.getBoundingClientRect();
+                const gx = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round((ev.clientX - gr.left - offsetX) / HC_COL_W) * HC_COL_W));
+                const gy = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round((ev.clientY - gr.top  - offsetY) / HC_ROW_H) * HC_ROW_H));
+                this._leCoordTip.textContent = '→ x: ' + gx + 'px  y: ' + gy + 'px';
+            }
+        };
+        const onUp = (ev) => {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup',   onUp);
+            ghost.remove();
+            this._leDrop(ev, catalogKey, offsetX, offsetY, mode);
+            this._leDrag = null;
+            if (this._leCoordTip) this._leCoordTip.textContent = '';
+        };
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup',   onUp);
     }
-    _layoutSvg4() {
-        // Power oben-links + Fernsehen, grosses Logo, Zeit inline unter Titel
-        return this._layoutSvgL2to6base(
-            '<rect x="32" y="28" width="14" height="3" rx="1" fill="#e07020"/>'
-        );
-    }
-    _layoutSvg5() {
-        // Power oben-links + Fernsehen, grosses Logo, Zeit unten-rechts
-        return this._layoutSvgL2to6base(
-            '<rect x="56" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
-        );
-    }
-    _layoutSvg6() {
-        // Power oben-links + Fernsehen, grosses Logo, Zeit unten-rechts (wie Layout 5)
-        return this._layoutSvgL2to6base(
-            '<rect x="56" y="38" width="18" height="3" rx="1" fill="#e07020"/>'
-        );
+
+    _leDrop(e, catalogKey, offsetX, offsetY, mode) {
+        const grid = this._leGridEl;
+        if (!grid) return;
+        const cat     = HC_ELEM_CATALOG[catalogKey];
+        const layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+        const gr      = grid.getBoundingClientRect();
+        const relX    = e.clientX - gr.left - offsetX;
+        const relY    = e.clientY - gr.top  - offsetY;
+
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout  = { ...this._leLayouts[mode] };
+
+        const inGrid = relX > -cat.w * 0.5 && relX < HC_DISP_W - cat.w * 0.5 &&
+                       relY > -cat.h * 0.5 && relY < HC_DISP_H - cat.h * 0.5;
+        if (inGrid) {
+            const left = Math.max(0, Math.min(HC_DISP_W - cat.w, Math.round(relX / HC_COL_W) * HC_COL_W));
+            const top  = Math.max(0, Math.min(HC_DISP_H - cat.h, Math.round(relY / HC_ROW_H) * HC_ROW_H));
+            layout[layoutKey] = { left, top, w: cat.w, h: cat.h, visible: true };
+        } else {
+            delete layout[layoutKey];
+        }
+
+        this._leLayouts[mode] = layout;
+        this._leRenderGridEls(mode);
+        this._leRenderPaletteItems(mode, this._lePaletteEl);
     }
 
     // -------- SECTION: ENIGMA2 / OPENWEBIF --------
