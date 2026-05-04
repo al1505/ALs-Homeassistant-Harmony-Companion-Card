@@ -43,45 +43,43 @@ Direkt-Link: **[paypal.me/al1505](https://paypal.me/al1505)** ❤️
 ## 📸 Screenshots
 
 <details open>
-<summary><b>1. TV-Modus mit EPG-Daten</b></summary>
+<summary><b>🎬 1. TV-Modus mit Live-EPG (ORF SPORT+ HD)</b></summary>
 
-> Screenshot platzhalter — hier später `screenshots/01-tv-mode.png` einfügen
+![TV-Modus](screenshots/03-tv-mode.png)
 
-```
-[Display zeigt: Kanal-Logo, Sendername, Titel, Beg-End-Zeit, Restzeit "+109m"]
-```
+Card im aktiven TV-Modus: Live-Grab-Bild vom Receiver, Channel-Logo, Sender + Titel mit Restzeit (`+52m`) und Beg-End-Anzeige (`11:00 - 13:00`). Numpad, Farbtasten, D-Pad und Lautstärke/Kanal-Wippe sind eingeblendet.
 </details>
 
 <details>
-<summary><b>2. Layout-Editor mit Drag-and-Drop</b></summary>
+<summary><b>🌓 2. Idle / PowerOff (Smoked-Glass-Display)</b></summary>
 
-> Screenshot platzhalter — `screenshots/02-editor.png`
+![Idle](screenshots/01-idle.png)
 
-```
-[Editor zeigt: Element-Palette, Display-Raster mit Power/Logo/Activity/Sender/Titel/Zeit, Property-Editor]
-```
+Im PowerOff-Zustand zeigt das Display den konfigurierbaren Smoked-Glass-Look (Default `#2A2A3C`). Panels, Linien, Logo und Menü werden komplett ausgeblendet — übrig bleiben nur Power-Button und Aktivitätsname.
 </details>
 
 <details>
-<summary><b>3. Multi-Hub-Bar</b></summary>
+<summary><b>🔌 3. Multi-Hub-Bar mit Dropdown</b></summary>
 
-> Screenshot platzhalter — `screenshots/03-multihub.png`
+![Multi-Hub](screenshots/02-multihub.png)
 
-```
-[Hub-Bar oben: ‹ ● Wohnzimmer ▾ › → Dropdown mit allen Hubs + Online-Status]
-```
+Multi-Hub-Auswahl oben in der Card: aktueller Hub mit grünem Online-Punkt, Pfeile links/rechts, Klick aufs Caret öffnet die Liste aller konfigurierten Hubs (hier "Hub Office" + "Hub Schlafzimmer" — beide online). Alternativ via Swipe-Geste auf der Display-Zone.
 </details>
 
 <details>
-<summary><b>4. Per-Hub-Konfiguration mit farbigem Rahmen</b></summary>
+<summary><b>🎨 4. Editor mit per-Hub-Rahmen (Hub-Farben)</b></summary>
 
-> Screenshot platzhalter — `screenshots/04-per-hub-config.png`
+![Editor Per-Hub](screenshots/04-editor-perhub.png)
+
+Editor mit Hub-Konfiguration aufgeklappt: Hub-Tabs in jeweiliger Farbe, Per-Hub-Bundle (TV-Receiver / Activities / Tasten / Extra-Slots) eingerahmt in der Hub-Farbe. Live-Preview rechts.
 </details>
 
 <details>
-<summary><b>5. Idle / PowerOff Smoked-Glass</b></summary>
+<summary><b>🖼️ 5. Visueller Display-Layout-Editor (Drag-and-Drop)</b></summary>
 
-> Screenshot platzhalter — `screenshots/05-idle.png`
+![Layout-Editor](screenshots/05-editor-layout.png)
+
+Vollständiger Drag-and-Drop-Layout-Editor: Display-Offset-Inputs, Smoked-Glass-Farbe, Element-Palette (Power, Menü, Panel, Linie, Logo XL/L/M/S, Activity, Sender, Titel, Zeit, Beg-End), Drag-and-Drop-Raster mit positionierten Elementen, Panel-Property-Editor (Farbe / Transparenz / Eckradius), Text-Element-Editor (Schriftgröße / Schriftart / Farbe), Übernehmen/Zurücksetzen.
 </details>
 
 > 💡 **Eigene Screenshots beisteuern:** PR welcome — Bilder im Ordner `screenshots/` ablegen.
