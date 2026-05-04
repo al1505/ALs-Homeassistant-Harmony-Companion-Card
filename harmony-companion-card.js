@@ -2,9 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.8.0 (Linien-Element, mehrere Linien mit Auswahl + Rotation,
-//                  Bugfix: setConfig setzte _leLayouts zurueck → Zustand verloren,
-//                  Slider-Drag-Fix, Transparenz-Slider semantisch invertiert)
+// Version: 4.8.1 (Linie wird jetzt auch im Editor rotiert dargestellt,
+//                  Resize-Math mit inverser Rotation für WYSIWYG bei Linien)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -12,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.8.0";
+const HC_VERSION = "4.8.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2653,6 +2652,8 @@ class HarmonyCompanionEditor extends HTMLElement {
                       : isLine  ? '0'
                       : '3px';
         const zIdx    = (isPanel || isLine) ? '1' : '2';
+        const lineRot = isLine ? (def.rotation || 0) : 0;
+        const transformStr = lineRot ? `transform:rotate(${lineRot}deg);transform-origin:center center;` : '';
         el.style.cssText = [
             'position:absolute;',
             `left:${def.left * S}px;top:${def.top * S}px;`,
@@ -2662,8 +2663,9 @@ class HarmonyCompanionEditor extends HTMLElement {
             `display:flex;align-items:center;justify-content:${align};`,
             isIcon ? 'flex-direction:column;text-align:center;' : '',
             pad,
+            transformStr,
             `border-radius:${radius};cursor:grab;user-select:none;touch-action:none;`,
-            `box-sizing:border-box;z-index:${zIdx};overflow:hidden;white-space:nowrap;`,
+            `box-sizing:border-box;z-index:${zIdx};overflow:${isLine ? 'visible' : 'hidden'};white-space:nowrap;`,
             (isPanel || isLine)
                 ? ((isSelectedPanel || isSelectedLine)
                     ? 'border:2px solid #03a9f4;outline:1px dashed rgba(255,255,255,0.5);'
@@ -2679,13 +2681,11 @@ class HarmonyCompanionEditor extends HTMLElement {
         labelEl.style.pointerEvents = 'none';
         if (isIcon) {
             labelEl.innerHTML = `<div style="line-height:1.1">${cat.label}</div><div style="font-size:9px;opacity:0.8;margin-top:1px">${w}×${h}</div>`;
-        } else if (isLine) {
-            const rot = (def.rotation != null) ? def.rotation : 0;
-            labelEl.textContent = cat.label + ' ' + w + '×' + h + ' (' + rot + '°)';
-        } else {
+        } else if (!isLine) {
+            // Linie: kein Label im Element (zu dünn, schlecht lesbar bei Rotation)
             labelEl.textContent = cat.label + ' ' + w + '×' + h;
         }
-        el.appendChild(labelEl);
+        if (!isLine) el.appendChild(labelEl);
         // Resize-Handle in unterer rechter Ecke
         const resizeH = document.createElement('div');
         resizeH.className = 'le-el-resize';
@@ -2734,19 +2734,33 @@ class HarmonyCompanionEditor extends HTMLElement {
         const startH = def.h || (cat0 && cat0.h) || 14;
         const startX = e.clientX;
         const startY = e.clientY;
-        const minW   = HC_COL_W * 2;   // 10px
-        const minH   = HC_ROW_H * 2;   // 6px
+        const isLine = hcIsLine(key);
+        // Linie: feinere Schritte (1×1 px), min 1×1; sonst Standard-Snap
+        const minW   = isLine ? 1 : HC_COL_W * 2;
+        const minH   = isLine ? 1 : HC_ROW_H * 2;
         const maxW   = this._dispW - def.left;
-        const maxH   = this._dispH - def.top;
+        const maxH   = isLine ? 20 : (this._dispH - def.top);
+        // Bei rotierter Linie: Screen-Delta in Element-Delta umrechnen
+        const lineRot = isLine ? ((def.rotation || 0) * Math.PI / 180) : 0;
+        const cosR = Math.cos(lineRot), sinR = Math.sin(lineRot);
 
         const labelEl = el.querySelector('.le-el-label');
-        const isIcon  = (key === 'power' || key === 'logo');
+        const isIcon  = (key === 'power' || key === 'logo' || key === 'menu');
 
         const calcSize = (ev) => {
-            const dx = (ev.clientX - startX) / S;
-            const dy = (ev.clientY - startY) / S;
-            const w = Math.max(minW, Math.min(maxW, Math.round((startW + dx) / HC_COL_W) * HC_COL_W));
-            const h = Math.max(minH, Math.min(maxH, Math.round((startH + dy) / HC_ROW_H) * HC_ROW_H));
+            const dxS = (ev.clientX - startX) / S;
+            const dyS = (ev.clientY - startY) / S;
+            // Inverse Rotation für Linie: Screen-Delta → Element-Delta
+            const dx = isLine ? (dxS * cosR + dyS * sinR) : dxS;
+            const dy = isLine ? (-dxS * sinR + dyS * cosR) : dyS;
+            let w, h;
+            if (isLine) {
+                w = Math.max(minW, Math.min(maxW, Math.round(startW + dx)));
+                h = Math.max(minH, Math.min(maxH, Math.round(startH + dy)));
+            } else {
+                w = Math.max(minW, Math.min(maxW, Math.round((startW + dx) / HC_COL_W) * HC_COL_W));
+                h = Math.max(minH, Math.min(maxH, Math.round((startH + dy) / HC_ROW_H) * HC_ROW_H));
+            }
             return { w, h };
         };
 
@@ -2813,13 +2827,14 @@ class HarmonyCompanionEditor extends HTMLElement {
             }
         }
 
-        // Drag aus Grid → bestehende Größe behalten
-        let dragW = cat.w, dragH = cat.h;
+        // Drag aus Grid → bestehende Größe + Rotation behalten
+        let dragW = cat.w, dragH = cat.h, dragRot = 0;
         if (isFromGrid) {
             const existing = this._leLayouts[mode] && this._leLayouts[mode][layoutKey];
             if (existing && existing.visible !== false) {
                 dragW = existing.w || cat.w;
                 dragH = existing.h || cat.h;
+                if (hcIsLine(layoutKey)) dragRot = existing.rotation || 0;
             }
         }
 
@@ -2827,7 +2842,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         const offsetX = dragW * S / 2;
         const offsetY = dragH * S / 2;
 
-        this._leDrag = { catalogKey, layoutKey, offsetX, offsetY, mode, w: dragW, h: dragH };
+        this._leDrag = { catalogKey, layoutKey, offsetX, offsetY, mode, w: dragW, h: dragH, rot: dragRot };
 
         const grid = this._leGridEl;
 
@@ -2848,6 +2863,9 @@ class HarmonyCompanionEditor extends HTMLElement {
                 sp.style.top     = (st * S) + 'px';
                 sp.style.width   = (dragW * S) + 'px';
                 sp.style.height  = (dragH * S) + 'px';
+                // Bei rotierter Linie: Snap-Preview ebenfalls drehen (Drehpunkt = Mittelpunkt)
+                sp.style.transform = dragRot ? `rotate(${dragRot}deg)` : '';
+                sp.style.transformOrigin = 'center center';
                 if (this._leCoordTip) this._leCoordTip.textContent = '→ x: ' + sl + 'px  y: ' + st + 'px';
             } else {
                 if (sp) sp.style.display = 'none';
