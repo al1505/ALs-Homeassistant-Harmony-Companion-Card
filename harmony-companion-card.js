@@ -2,8 +2,9 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.8.1 (Linie wird jetzt auch im Editor rotiert dargestellt,
-//                  Resize-Math mit inverser Rotation für WYSIWYG bei Linien)
+// Version: 4.9.0 (Text-Element-Editor (Schriftgröße/-art/-farbe), staerkeres Selection-Highlight,
+//                  Bugfix: Frozen-Object-Errors in Property-Editoren via immutable Updates,
+//                  _patchTop deep-cloned Object-Werte gegen HA-Freezing)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +12,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.8.1";
+const HC_VERSION = "4.9.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -72,6 +73,24 @@ function hcIsPanel(key) {
 function hcIsLine(key) {
     return key === 'line' || (typeof key === 'string' && key.startsWith('line_'));
 }
+// Text-Elemente (Schrift-Eigenschaften anpassbar)
+const HC_TEXT_ELEM_KEYS = ['activity', 'channel', 'title', 'time', 'timespan', 'menu'];
+function hcIsTextEl(key) { return HC_TEXT_ELEM_KEYS.includes(key); }
+// Font-Familien-Liste für Editor-Dropdown
+const HC_FONT_FAMILIES = [
+    { value: '',                              label: 'Standard (vom Theme)' },
+    { value: 'Arial, sans-serif',             label: 'Arial' },
+    { value: 'Helvetica, sans-serif',         label: 'Helvetica' },
+    { value: 'Roboto, sans-serif',            label: 'Roboto' },
+    { value: 'Verdana, sans-serif',           label: 'Verdana' },
+    { value: 'Tahoma, sans-serif',            label: 'Tahoma' },
+    { value: 'Trebuchet MS, sans-serif',      label: 'Trebuchet MS' },
+    { value: '"Times New Roman", serif',      label: 'Times New Roman' },
+    { value: 'Georgia, serif',                label: 'Georgia' },
+    { value: '"Courier New", monospace',      label: 'Courier New' },
+    { value: 'monospace',                     label: 'Monospace' },
+    { value: '"Segoe UI", system-ui, sans-serif', label: 'Segoe UI' },
+];
 
 // Gibt Katalog-Eintrag für einen Layout-Schlüssel zurück
 function hcCatalogFor(layoutKey, def) {
@@ -1775,6 +1794,14 @@ class HarmonyCompanionCard extends HTMLElement {
                 el.style.paddingRight = inRightArea ? '5px'   : '0';
                 el.style.paddingLeft  = inRightArea ? '0'     : '5px';
             }
+            // Text-Element-Overrides: Font-Größe, Font-Familie, Farbe
+            if (hcIsTextEl(key)) {
+                if (def.fontSize)   el.style.fontSize   = def.fontSize + 'px';
+                if (def.fontFamily) el.style.fontFamily = def.fontFamily;
+                else                el.style.fontFamily = '';
+                if (def.color && def.color !== 'auto') el.style.color = def.color;
+                else                                   el.style.color = '';
+            }
         });
     }
 
@@ -1845,9 +1872,8 @@ class HarmonyCompanionEditor extends HTMLElement {
         if (!this._config.buttons) this._config.buttons = { global: {} };
         if (!this._config.dynamic_slots) this._config.dynamic_slots = {};
         if (!this._config.activity_media) this._config.activity_media = {};
-        // Editor-Zustand NICHT zurücksetzen — sonst gehen Custom-Werte (bgColor, bgAlpha, ...)
-        // verloren wenn HA setConfig nach unserem _patchTop aufruft. _leLayouts wird beim
-        // ersten Lesen über _leLoadLayout aus this._config gemerged.
+        // Editor-Zustand erhalten (kein Reset). _patchTop deep-cloned bevor an HA → unsere
+        // _leLayouts-Refs werden nicht eingefroren, bleiben mutable.
         if (!this._leLayouts) this._leLayouts = {};
 
         if (this._loaded) { this._tryBuild(); return; }
@@ -2214,10 +2240,17 @@ class HarmonyCompanionEditor extends HTMLElement {
 
         // Linien-Eigenschaften (nur sichtbar wenn Linie im Layout)
         const lineBox = document.createElement('div');
-        lineBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        lineBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
         this._leLineBox = lineBox;
         this._leRenderLineControls(mode);
         body.appendChild(lineBox);
+
+        // Text-Element-Eigenschaften (Schriftgröße/-art/-farbe für Activity, Sender, Titel etc.)
+        const textBox = document.createElement('div');
+        textBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        this._leTextBox = textBox;
+        this._leRenderTextControls(mode);
+        body.appendChild(textBox);
 
         // Aktions-Buttons
         const actRow = document.createElement('div');
@@ -2306,9 +2339,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
         colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         colorInp.oninput = (e) => {
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, bgColor: e.target.value };
+            this._leUpdateLayoutEl(mode, selKey, { bgColor: e.target.value });
             this._leRenderGridEls(mode);
         };
         colorWrap.appendChild(colorLbl);
@@ -2336,9 +2367,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             const t = Number(e.target.value);
             const a = Math.max(0, Math.min(1, 1 - t / 100));
             alphaLbl.textContent = 'Transparenz: ' + t + '%';
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, bgAlpha: a };
+            this._leUpdateLayoutEl(mode, selKey, { bgAlpha: a });
             this._leRenderGridEls(mode);
         };
         alphaWrap.appendChild(alphaLbl);
@@ -2359,9 +2388,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         radInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         radInp.onchange = (e) => {
             const v = parseInt(e.target.value, 10);
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, radius: Number.isFinite(v) ? v : 8 };
+            this._leUpdateLayoutEl(mode, selKey, { radius: Number.isFinite(v) ? v : 8 });
             this._leRenderGridEls(mode);
         };
         radWrap.appendChild(radLbl);
@@ -2373,7 +2400,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         btnDel.textContent = 'Panel löschen';
         btnDel.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid #c0392b;cursor:pointer;font-size:11px;background:transparent;color:#c0392b;align-self:flex-end;margin-left:auto;';
         btnDel.onclick = () => {
-            if (this._leLayouts[mode]) delete this._leLayouts[mode][selKey];
+            this._leDeleteLayoutEl(mode, selKey);
             this._leSelectedPanel = null;
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
@@ -2435,9 +2462,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
         colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         colorInp.oninput = (e) => {
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, color: e.target.value };
+            this._leUpdateLayoutEl(mode, selKey, { color: e.target.value });
             this._leRenderGridEls(mode);
         };
         colorWrap.appendChild(colorLbl);
@@ -2458,9 +2483,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         lenInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         lenInp.onchange = (e) => {
             const v = parseInt(e.target.value, 10);
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, w: Math.max(1, Number.isFinite(v) ? v : 50) };
+            this._leUpdateLayoutEl(mode, selKey, { w: Math.max(1, Number.isFinite(v) ? v : 50) });
             this._leRenderGridEls(mode);
         };
         lenWrap.appendChild(lenLbl);
@@ -2481,9 +2504,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         thickInp.addEventListener('pointerdown', (e) => e.stopPropagation());
         thickInp.onchange = (e) => {
             const v = parseInt(e.target.value, 10);
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, h: Math.max(1, Number.isFinite(v) ? v : 2) };
+            this._leUpdateLayoutEl(mode, selKey, { h: Math.max(1, Number.isFinite(v) ? v : 2) });
             this._leRenderGridEls(mode);
         };
         thickWrap.appendChild(thickLbl);
@@ -2506,9 +2527,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             let v = parseInt(e.target.value, 10);
             if (!Number.isFinite(v)) v = 0;
             v = ((v % 360) + 360) % 360;
-            const cur = this._leLayouts[mode] && this._leLayouts[mode][selKey];
-            if (!cur) return;
-            this._leLayouts[mode][selKey] = { ...cur, rotation: v };
+            this._leUpdateLayoutEl(mode, selKey, { rotation: v });
             this._leRenderGridEls(mode);
         };
         rotWrap.appendChild(rotLbl);
@@ -2520,12 +2539,199 @@ class HarmonyCompanionEditor extends HTMLElement {
         btnDel.textContent = 'Linie löschen';
         btnDel.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid #c0392b;cursor:pointer;font-size:11px;background:transparent;color:#c0392b;align-self:flex-end;margin-left:auto;';
         btnDel.onclick = () => {
-            if (this._leLayouts[mode]) delete this._leLayouts[mode][selKey];
+            this._leDeleteLayoutEl(mode, selKey);
             this._leSelectedLine = null;
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
         };
         box.appendChild(btnDel);
+    }
+
+    // Text-Element-Eigenschaften (Schriftgröße/-art/-farbe für sichtbare Text-Elemente)
+    _leRenderTextControls(mode) {
+        const box = this._leTextBox;
+        if (!box) return;
+        box.innerHTML = '';
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode] || {};
+        // Sichtbare Text-Elemente in dieser Mode
+        const labels = { activity: 'Activity', channel: 'Sender', title: 'Titel',
+                         time: 'Zeit', timespan: 'Beg-End', menu: 'Menü' };
+        const textKeys = HC_TEXT_ELEM_KEYS.filter(k => layout[k] && layout[k].visible !== false);
+        if (textKeys.length === 0) {
+            box.style.display = 'none';
+            this._leSelectedTextEl = null;
+            return;
+        }
+        box.style.display = 'flex';
+        if (!this._leSelectedTextEl || !textKeys.includes(this._leSelectedTextEl)) {
+            this._leSelectedTextEl = textKeys[0];
+        }
+        const selKey = this._leSelectedTextEl;
+        const def    = layout[selKey];
+
+        const lblTitle = document.createElement('div');
+        lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
+        lblTitle.textContent = 'Text:';
+        box.appendChild(lblTitle);
+
+        // Element-Auswahl-Dropdown
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:12px;';
+        textKeys.forEach(k => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = labels[k] || k;
+            if (k === selKey) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = (e) => {
+            this._leSelectedTextEl = e.target.value;
+            this._leRenderTextControls(mode);
+            this._leRenderGridEls(mode);
+        };
+        box.appendChild(sel);
+
+        // Schriftgröße
+        const sizeWrap = document.createElement('div');
+        sizeWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const sizeLbl = document.createElement('label');
+        sizeLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        sizeLbl.textContent = 'Größe (px)';
+        const sizeInp = document.createElement('input');
+        sizeInp.type = 'number';
+        sizeInp.min = '6'; sizeInp.max = '40'; sizeInp.step = '1';
+        sizeInp.placeholder = 'auto';
+        sizeInp.value = def.fontSize || '';
+        sizeInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        sizeInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        sizeInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            if (Number.isFinite(v) && v >= 6) next.fontSize = v;
+            else delete next.fontSize;
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+        };
+        sizeWrap.appendChild(sizeLbl);
+        sizeWrap.appendChild(sizeInp);
+        box.appendChild(sizeWrap);
+
+        // Schriftart
+        const fontWrap = document.createElement('div');
+        fontWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const fontLbl = document.createElement('label');
+        fontLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        fontLbl.textContent = 'Schriftart';
+        const fontSel = document.createElement('select');
+        fontSel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;min-width:140px;';
+        HC_FONT_FAMILIES.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.value;
+            opt.textContent = f.label;
+            if ((def.fontFamily || '') === f.value) opt.selected = true;
+            opt.style.fontFamily = f.value || 'inherit';
+            fontSel.appendChild(opt);
+        });
+        fontSel.addEventListener('pointerdown', (e) => e.stopPropagation());
+        fontSel.onchange = (e) => {
+            const v = e.target.value;
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            if (v) next.fontFamily = v; else delete next.fontFamily;
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+        };
+        fontWrap.appendChild(fontLbl);
+        fontWrap.appendChild(fontSel);
+        box.appendChild(fontWrap);
+
+        // Farbe (Auto / manuell)
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Farbe';
+        const colorRow = document.createElement('div');
+        colorRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+        const isAuto = !def.color || def.color === 'auto';
+        const autoChk = document.createElement('label');
+        autoChk.style.cssText = 'display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;';
+        const autoBox = document.createElement('input');
+        autoBox.type = 'checkbox';
+        autoBox.checked = isAuto;
+        autoBox.style.margin = '0';
+        autoChk.appendChild(autoBox);
+        const autoTxt = document.createElement('span');
+        autoTxt.textContent = 'Auto';
+        autoChk.appendChild(autoTxt);
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = (def.color && def.color !== 'auto') ? def.color : '#ffffff';
+        colorInp.disabled = isAuto;
+        colorInp.style.cssText = 'width:42px;height:26px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;' + (isAuto ? 'opacity:0.4;' : '');
+        autoBox.addEventListener('pointerdown', (e) => e.stopPropagation());
+        colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        autoBox.onchange = (e) => {
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            if (e.target.checked) {
+                delete next.color;
+                colorInp.disabled = true;
+                colorInp.style.opacity = '0.4';
+            } else {
+                next.color = colorInp.value;
+                colorInp.disabled = false;
+                colorInp.style.opacity = '';
+            }
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+        };
+        colorInp.oninput = (e) => {
+            if (autoBox.checked) return;
+            this._leUpdateLayoutEl(mode, selKey, { color: e.target.value });
+            this._leRenderGridEls(mode);
+        };
+        colorRow.appendChild(autoChk);
+        colorRow.appendChild(colorInp);
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorRow);
+        box.appendChild(colorWrap);
+
+        // Reset-Button
+        const btnReset = document.createElement('button');
+        btnReset.textContent = 'Zurücksetzen';
+        btnReset.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:11px;background:transparent;color:inherit;align-self:flex-end;margin-left:auto;';
+        btnReset.onclick = () => {
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            delete next.fontSize;
+            delete next.fontFamily;
+            delete next.color;
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+            this._leRenderTextControls(mode);
+        };
+        box.appendChild(btnReset);
+    }
+
+    // Immutable Update für ein Layout-Element (sicher gegen eingefrorene Objekte)
+    _leUpdateLayoutEl(mode, key, partial) {
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const oldLayout = this._leLayouts[mode];
+        const oldEntry  = oldLayout[key] || {};
+        this._leLayouts[mode] = { ...oldLayout, [key]: { ...oldEntry, ...partial } };
+    }
+    _leDeleteLayoutEl(mode, key) {
+        if (!this._leLayouts[mode]) return;
+        const newLayout = { ...this._leLayouts[mode] };
+        delete newLayout[key];
+        this._leLayouts[mode] = newLayout;
+    }
+    _leReplaceLayoutEl(mode, key, fullDef) {
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        this._leLayouts[mode] = { ...this._leLayouts[mode], [key]: fullDef };
     }
 
     // Auto-Save: Layout-Änderungen sofort in HA-Config speichern
@@ -2560,6 +2766,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         this._leCheckOverlaps(mode);
         this._leRenderPanelControls(mode);
         this._leRenderLineControls(mode);
+        this._leRenderTextControls(mode);
     }
 
     _leCheckOverlaps(mode) {
@@ -2633,9 +2840,11 @@ class HarmonyCompanionEditor extends HTMLElement {
         const isIcon   = (key === 'power' || key === 'logo' || key === 'menu');
         const isPanel  = hcIsPanel(key);
         const isLine   = hcIsLine(key);
+        const isText   = hcIsTextEl(key);
         const isTime   = (key === 'time');
         const isSelectedPanel = isPanel && this._leSelectedPanel === key;
         const isSelectedLine  = isLine  && this._leSelectedLine === key;
+        const isSelectedText  = isText  && this._leSelectedTextEl === key;
         const w = def.w || cat.w;
         const h = def.h || cat.h;
         // Zeit: rechtsbündig wenn rechts im Display platziert (> 55% der Breite)
@@ -2668,9 +2877,11 @@ class HarmonyCompanionEditor extends HTMLElement {
             `box-sizing:border-box;z-index:${zIdx};overflow:${isLine ? 'visible' : 'hidden'};white-space:nowrap;`,
             (isPanel || isLine)
                 ? ((isSelectedPanel || isSelectedLine)
-                    ? 'border:2px solid #03a9f4;outline:1px dashed rgba(255,255,255,0.5);'
+                    ? 'border:2px solid #03a9f4;box-shadow:0 0 0 3px rgba(3,169,244,0.35);'
                     : 'border:1px dashed rgba(255,255,255,0.6);')
-                : 'border:1px solid rgba(255,255,255,0.3);',
+                : (isSelectedText
+                    ? 'border:2px solid #03a9f4;box-shadow:0 0 0 3px rgba(3,169,244,0.35);'
+                    : 'border:1px solid rgba(255,255,255,0.3);'),
         ].join('');
         const catalogKey = key === 'logo'
             ? (h >= 42 ? 'logo_xl' : h >= 35 ? 'logo_l' : h >= 30 ? 'logo_m' : 'logo_s')
@@ -2716,6 +2927,11 @@ class HarmonyCompanionEditor extends HTMLElement {
             if (isLine && this._leSelectedLine !== key) {
                 this._leSelectedLine = key;
                 this._leRenderLineControls(mode);
+                this._leRenderGridEls(mode);
+            }
+            if (isText && this._leSelectedTextEl !== key) {
+                this._leSelectedTextEl = key;
+                this._leRenderTextControls(mode);
                 this._leRenderGridEls(mode);
             }
             this._leStartDrag(e, catalogKey, el, mode);
@@ -2785,8 +3001,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             document.removeEventListener('pointermove', onMove);
             document.removeEventListener('pointerup',   onUp);
             const { w, h } = calcSize(ev);
-            layout[key] = { ...def, w, h };
-            this._leLayouts[mode] = layout;
+            this._leUpdateLayoutEl(mode, key, { w, h });
             this._leRenderGridEls(mode);
             this._leRenderPaletteItems(mode, this._lePaletteEl);
             if (this._leCoordTip) this._leCoordTip.textContent = '';
@@ -3414,7 +3629,13 @@ class HarmonyCompanionEditor extends HTMLElement {
 
     _patchTop(key, value) {
         const next = Object.assign({}, this._config);
-        next[key] = value; this._config = next; this._dispatch();
+        // Deep-clone bei Objekten/Arrays, damit HA das Objekt einfrieren darf
+        // ohne unsere internen Referenzen (z.B. _leLayouts[mode]) mit zu betreffen.
+        next[key] = (value && typeof value === 'object')
+            ? JSON.parse(JSON.stringify(value))
+            : value;
+        this._config = next;
+        this._dispatch();
     }
 
     _patchSlot(slotId, field, value) {
