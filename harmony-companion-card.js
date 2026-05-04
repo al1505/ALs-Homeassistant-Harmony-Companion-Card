@@ -2,9 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.9.0 (Text-Element-Editor (Schriftgröße/-art/-farbe), staerkeres Selection-Highlight,
-//                  Bugfix: Frozen-Object-Errors in Property-Editoren via immutable Updates,
-//                  _patchTop deep-cloned Object-Werte gegen HA-Freezing)
+// Version: 4.9.1 (EPG-Refresh nach Kanalwechsel: kanalwechselnde Tasten triggern
+//                  verzoegerten EPG-Sensor-Update via homeassistant.update_entity)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -12,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.9.0";
+const HC_VERSION = "4.9.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -173,6 +172,15 @@ const _hcRelativeLum = (r, g, b) => {
     const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
     return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 };
+
+// Tasten die einen Kanalwechsel ausloesen → triggern verzoegerten EPG-Refresh
+const HC_CHANNEL_BTNS = new Set([
+    'ch_up', 'ch_down',
+    'num_0','num_1','num_2','num_3','num_4',
+    'num_5','num_6','num_7','num_8','num_9',
+    'num_minus','num_enter',
+    'red','green','yellow','blue',  // Farbtasten waehlen oft Kanaele in EPG
+]);
 
 // HARMONY_FALLBACKS: verwendet vom Editor-Auto-Befuellen-Button.
 // Kein Laufzeit-Fallback mehr in _executeAction() – nur noch explizite Konfiguration.
@@ -770,13 +778,45 @@ class HarmonyCompanionCard extends HTMLElement {
             if (actBtns   && actBtns[btnId])   cfg = actBtns[btnId];
             else if (globalBtns && globalBtns[btnId]) cfg = globalBtns[btnId];
         }
-        if (cfg) { this._fireCommand(cfg); return; }
+        if (cfg) {
+            this._fireCommand(cfg);
+            // Bei kanalwechselnden Tasten zusaetzlich EPG-Refresh anstossen
+            if (this._isTVActivity(currentAct) && HC_CHANNEL_BTNS.has(btnId)) {
+                this._scheduleEpgRefresh();
+            }
+            return;
+        }
 
         // bot_* pruefen zusaetzlich dynamic_slots
         if (btnId.indexOf('bot_') === 0) {
             const slot = (this.config.dynamic_slots && this.config.dynamic_slots[btnId]) || null;
             if (slot && slot.action) this._fireCommand(slot.action);
         }
+    }
+
+    // Plant einen verzoegerten EPG-Refresh nach Kanalwechsel (Receiver braucht ~1-2s).
+    // Mehrfach-Klicks (z.B. Ziffern fuer Kanalnummer) werden zusammengefasst — nur der
+    // letzte Klick triggert den Refresh.
+    _scheduleEpgRefresh() {
+        if (!this._hass || !this.config) return;
+        const eid = this.config.enigma2_entity;
+        if (!eid) return;
+        if (this._epgRefreshTimer) clearTimeout(this._epgRefreshTimer);
+        this._epgRefreshTimer = setTimeout(() => {
+            this._epgRefreshTimer = null;
+            if (this._hass) {
+                this._hass.callService('homeassistant', 'update_entity', { entity_id: eid })
+                    .catch(() => {});
+            }
+            // Zweiter Refresh nach 3.5s falls Receiver noch nicht umgeschaltet hatte
+            this._epgRefreshTimer2 = setTimeout(() => {
+                this._epgRefreshTimer2 = null;
+                if (this._hass) {
+                    this._hass.callService('homeassistant', 'update_entity', { entity_id: eid })
+                        .catch(() => {});
+                }
+            }, 2000);
+        }, 1500);
     }
 
     _fireCommand(val) {
@@ -1806,8 +1846,10 @@ class HarmonyCompanionCard extends HTMLElement {
     }
 
     disconnectedCallback() {
-        if (this._fadeTimer)    { clearTimeout(this._fadeTimer);      this._fadeTimer    = null; }
-        if (this._progressTimer){ clearInterval(this._progressTimer); this._progressTimer = null; }
+        if (this._fadeTimer)       { clearTimeout(this._fadeTimer);       this._fadeTimer       = null; }
+        if (this._progressTimer)   { clearInterval(this._progressTimer);  this._progressTimer   = null; }
+        if (this._epgRefreshTimer) { clearTimeout(this._epgRefreshTimer); this._epgRefreshTimer = null; }
+        if (this._epgRefreshTimer2){ clearTimeout(this._epgRefreshTimer2);this._epgRefreshTimer2= null; }
         this._stopGrabRefresh();
     }
 }
