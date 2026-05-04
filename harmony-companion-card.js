@@ -2,9 +2,9 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.3.1 (Hub-Banner in Hub-Farbe, Display-Hintergrundfarbe konfigurierbar
-//                  (Default #2A2A3C), Power-Button mit klarer Button-Optik (Verlauf+Border+Shadow),
-//                  Hub-Dropdown-Bug behoben (Single-Listener statt akkumuliert).)
+// Version: 5.3.2 (Bugfix: LCD_BG ueberschrieb Smoked-Glass — Display.background wird nicht
+//                  mehr in applyColors/Idle ueberschrieben. Helle Schrift in Idle.
+//                  Power-Button mit solidem grauem Verlauf statt fast-transparent.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -12,7 +12,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.3.1";
+const HC_VERSION = "5.3.2";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -692,20 +692,21 @@ class HarmonyCompanionCard extends HTMLElement {
                     z-index: 3; width: 36px; height: 36px; border-radius: 50%;
                     display: flex; align-items: center; justify-content: center;
                     cursor: pointer; -webkit-tap-highlight-color: transparent;
-                    background: linear-gradient(145deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
-                    border: 1px solid rgba(255,255,255,0.22);
-                    color: #e8ecf2;
+                    /* Solider grauer Button (etwas heller als Display-BG für Sichtbarkeit) */
+                    background: linear-gradient(145deg, rgba(160,170,190,0.45), rgba(80,90,110,0.55));
+                    border: 1px solid rgba(220,225,240,0.35);
+                    color: #f0f3f8;
                     box-shadow:
-                        inset 0 1px 0 rgba(255,255,255,0.25),
-                        inset 0 -1px 1px rgba(0,0,0,0.25),
-                        0 2px 4px rgba(0,0,0,0.35);
+                        inset 0 1px 0 rgba(255,255,255,0.30),
+                        inset 0 -1px 1px rgba(0,0,0,0.30),
+                        0 2px 5px rgba(0,0,0,0.45);
                     transition: background 0.15s ease, box-shadow 0.15s ease;
                 }
                 #display-power:active {
-                    background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.20));
-                    box-shadow: inset 0 2px 5px rgba(0,0,0,0.45);
+                    background: linear-gradient(145deg, rgba(50,60,80,0.55), rgba(120,130,150,0.45));
+                    box-shadow: inset 0 2px 5px rgba(0,0,0,0.55);
                 }
-                #display-power svg { pointer-events: none; fill: #e8ecf2; }
+                #display-power svg { pointer-events: none; fill: #f0f3f8; }
                 #display-dots {
                     position: absolute; top: 6px; right: 6px; z-index: 3;
                     width: 32px; height: 32px; border-radius: 50%;
@@ -1735,18 +1736,20 @@ class HarmonyCompanionCard extends HTMLElement {
         }
 
         // ---- Hintergrund, Gradient, Farben ----
-        const FALLBACK_BG   = 'rgb(42,42,60)';      // Dunkles Blau-Grau (passt zu TV)
-        const FALLBACK_TEXT = 'rgb(220,220,220)';
-        const LCD_BG        = 'linear-gradient(145deg, #d4d4d4, #f0f0f0)';
+        // v5.3.2: Smoked-Glass-Hintergrund bleibt IMMER erhalten (display_bg_color).
+        // Channel-Farben werden NUR auf den Gradient-Overlay gelegt — display.style.background
+        // wird nicht mehr ueberschrieben, damit der konfigurierbare Smoked-Glass-Look bleibt.
+        const FALLBACK_BG   = 'rgb(42,42,60)';
+        const FALLBACK_TEXT = '#e8ecf2';
 
         const applyColors = (bgColor, textColor, subColor) => {
-            // Gradient: HA-Ansatz – Vollfarbe links → transparent rechts
+            // Gradient-Overlay: Channel-Farbe links → transparent rechts (auf Smoked-Glass)
             const bgTrans = bgColor.startsWith('rgb(')
                 ? bgColor.replace('rgb(', 'rgba(').replace(')', ',0)')
                 : bgColor + '00';
             if (gradEl) gradEl.style.background =
                 'linear-gradient(to right, ' + bgColor + ' 35%, ' + bgTrans + ' 75%)';
-            display.style.background = bgColor;
+            // Display-Hintergrund NICHT überschreiben (bleibt Smoked-Glass)
             display.style.color      = textColor;
             if (actEl)   actEl.style.color   = subColor;
             if (chanEl)  chanEl.style.color  = textColor;
@@ -1830,8 +1833,9 @@ class HarmonyCompanionCard extends HTMLElement {
             if (gradEl) gradEl.style.background = '';
             display.classList.remove('tv-mode');
             this._stopProgressTimer();
-            display.style.background = LCD_BG;
-            display.style.color      = '#333333';
+            // v5.3.2: Smoked-Glass nicht überschreiben — display_bg_color bleibt aktiv (von _renderDashboard inline gesetzt).
+            // Helle Schrift fuer dunklen Hintergrund.
+            display.style.color      = '#e8ecf2';
             if (actEl)   actEl.style.color   = '';
             if (chanEl)  chanEl.style.color  = '';
             if (titleEl) titleEl.style.color = '';
