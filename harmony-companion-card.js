@@ -2,8 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 4.9.1 (EPG-Refresh nach Kanalwechsel: kanalwechselnde Tasten triggern
-//                  verzoegerten EPG-Sensor-Update via homeassistant.update_entity)
+// Version: 5.0.0 (Start v5-Entwicklungslinie — basiert auf v4.9.1)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "4.9.1";
+const HC_VERSION = "5.0.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
