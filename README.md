@@ -45,7 +45,7 @@ Direkt-Link: **[paypal.me/al1505](https://paypal.me/al1505)** ❤️
 <details open>
 <summary><b>🎬 1. TV-Modus mit Live-EPG (ORF SPORT+ HD)</b></summary>
 
-![TV-Modus](screenshots/03-tv-mode.png)
+![TV-Modus](screenshots/03-tv-mode1.png)
 
 Card im aktiven TV-Modus: Live-Grab-Bild vom Receiver, Channel-Logo, Sender + Titel mit Restzeit (`+52m`) und Beg-End-Anzeige (`11:00 - 13:00`). Numpad, Farbtasten, D-Pad und Lautstärke/Kanal-Wippe sind eingeblendet.
 </details>
