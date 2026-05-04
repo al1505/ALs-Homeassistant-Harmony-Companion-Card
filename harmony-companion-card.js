@@ -2,10 +2,9 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.3.0 (Smoked-Glass Display, Idle versteckt Panels/Linien/Logo/Menue,
-//                  Editor: Display-Layout zuoberst, per-Hub-Sections in farbigem Rahmen
-//                  mit konfigurierbarer Hub-Farbe, Reihenfolge: TV-Receiver, Activities,
-//                  Tasten, Extra-Slots)
+// Version: 5.3.1 (Hub-Banner in Hub-Farbe, Display-Hintergrundfarbe konfigurierbar
+//                  (Default #2A2A3C), Power-Button mit klarer Button-Optik (Verlauf+Border+Shadow),
+//                  Hub-Dropdown-Bug behoben (Single-Listener statt akkumuliert).)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -13,7 +12,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.3.0";
+const HC_VERSION = "5.3.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -182,6 +181,18 @@ const HC_HUB_COLORS = [
 ];
 function hcHubColor(hub, idx) {
     return (hub && hub.color) || HC_HUB_COLORS[(idx || 0) % HC_HUB_COLORS.length];
+}
+
+// Default-Hintergrundfarbe für die Display-Zone (Smoked-Glass)
+const HC_DEFAULT_DISPLAY_BG = '#2A2A3C';
+// Hex → leicht hellerer Ton oben + leicht dunklerer Ton unten für Glas-Verlauf
+function hcDisplayBgGradient(hex) {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || HC_DEFAULT_DISPLAY_BG);
+    let r = 42, g = 42, b = 60;
+    if (m) { r = parseInt(m[1],16); g = parseInt(m[2],16); b = parseInt(m[3],16); }
+    const lt = (c) => Math.min(255, Math.round(c + 22));
+    const dk = (c) => Math.max(0,   Math.round(c - 18));
+    return `linear-gradient(135deg, rgba(${lt(r)},${lt(g)},${lt(b)},0.96) 0%, rgba(${dk(r)},${dk(g)},${dk(b)},0.98) 100%)`;
 }
 
 // Tasten die einen Kanalwechsel ausloesen → triggern verzoegerten EPG-Refresh
@@ -628,10 +639,9 @@ class HarmonyCompanionCard extends HTMLElement {
                 }
                 .hub-dropdown-item:hover { background: rgba(255,255,255,0.08); }
                 .hub-dropdown-item.active { background: rgba(3,169,244,0.15); }
-                /* Smoked-Glass: dunkles Blau-Grau wie ausgeschaltetes TV-Display */
+                /* Smoked-Glass: Hintergrund wird dynamisch via JS aus display_bg_color gesetzt */
                 .display-zone {
-                    background:
-                        linear-gradient(135deg, rgba(38,46,62,0.96) 0%, rgba(20,28,42,0.96) 100%);
+                    background: linear-gradient(135deg, rgba(64,64,82,0.96) 0%, rgba(24,24,42,0.98) 100%);
                     border-radius: 8px; min-height: 60px;
                     display: flex; flex-direction: column; justify-content: center;
                     color: #d8dce4; font-family: inherit;
@@ -682,11 +692,20 @@ class HarmonyCompanionCard extends HTMLElement {
                     z-index: 3; width: 36px; height: 36px; border-radius: 50%;
                     display: flex; align-items: center; justify-content: center;
                     cursor: pointer; -webkit-tap-highlight-color: transparent;
-                    background: rgba(255,255,255,0.10); color: #e0e4ec;
-                    transition: background 0.15s ease;
+                    background: linear-gradient(145deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
+                    border: 1px solid rgba(255,255,255,0.22);
+                    color: #e8ecf2;
+                    box-shadow:
+                        inset 0 1px 0 rgba(255,255,255,0.25),
+                        inset 0 -1px 1px rgba(0,0,0,0.25),
+                        0 2px 4px rgba(0,0,0,0.35);
+                    transition: background 0.15s ease, box-shadow 0.15s ease;
                 }
-                #display-power:active { background: rgba(255,255,255,0.25); }
-                #display-power svg { pointer-events: none; fill: #d8dce4; }
+                #display-power:active {
+                    background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.20));
+                    box-shadow: inset 0 2px 5px rgba(0,0,0,0.45);
+                }
+                #display-power svg { pointer-events: none; fill: #e8ecf2; }
                 #display-dots {
                     position: absolute; top: 6px; right: 6px; z-index: 3;
                     width: 32px; height: 32px; border-radius: 50%;
@@ -893,6 +912,13 @@ class HarmonyCompanionCard extends HTMLElement {
         // Hub-Bar (Multi-Hub-Auswahl)
         this._wireHubBar();
 
+        // Display-Hintergrundfarbe (Smoked-Glass) aus Config oder Default
+        const displayEl = this.shadowRoot.getElementById('harmony-display');
+        if (displayEl) {
+            const bg = (this.config && this.config.display_bg_color) || HC_DEFAULT_DISPLAY_BG;
+            displayEl.style.background = hcDisplayBgGradient(bg);
+        }
+
         // Progress-Bar: Klick = Seek
         const progBar = this.shadowRoot.getElementById('display-progress');
         if (progBar) progBar.onclick = (e) => {
@@ -923,10 +949,19 @@ class HarmonyCompanionCard extends HTMLElement {
             e.stopPropagation();
             cur.classList.toggle('open');
         };
-        // Klick außerhalb schließt Dropdown
-        document.addEventListener('click', () => {
-            if (cur) cur.classList.remove('open');
-        });
+        // Klicks innerhalb des Dropdown-Containers nicht zu cur durchreichen
+        // (sonst würde ein Klick auf Padding den Toggle wieder schließen).
+        if (drop) drop.onclick = (e) => e.stopPropagation();
+
+        // Single document-listener (deduped) — alte Variante hat bei jedem Render einen
+        // neuen Listener angehaengt, das hat die Dropdown-Reaktion unzuverlaessig gemacht.
+        if (!this._hubBarOutsideClick) {
+            this._hubBarOutsideClick = () => {
+                const c = this.shadowRoot && this.shadowRoot.getElementById('hub-current');
+                if (c) c.classList.remove('open');
+            };
+            document.addEventListener('click', this._hubBarOutsideClick);
+        }
         // Swipe-Geste auf der Display-Zone für Hub-Wechsel
         const display = root.getElementById('harmony-display');
         if (display) {
@@ -2123,6 +2158,10 @@ class HarmonyCompanionCard extends HTMLElement {
         if (this._progressTimer)   { clearInterval(this._progressTimer);  this._progressTimer   = null; }
         if (this._epgRefreshTimer) { clearTimeout(this._epgRefreshTimer); this._epgRefreshTimer = null; }
         if (this._epgRefreshTimer2){ clearTimeout(this._epgRefreshTimer2);this._epgRefreshTimer2= null; }
+        if (this._hubBarOutsideClick) {
+            document.removeEventListener('click', this._hubBarOutsideClick);
+            this._hubBarOutsideClick = null;
+        }
         this._stopGrabRefresh();
     }
 }
@@ -2603,14 +2642,15 @@ class HarmonyCompanionEditor extends HTMLElement {
         }
     }
 
-    // Banner für per-Hub-Sections — zeigt welcher Hub gerade bearbeitet wird
+    // Banner für per-Hub-Sections — zeigt welcher Hub gerade bearbeitet wird (in Hub-Farbe)
     _edHubBanner() {
         const c = this._config || {};
         if (!Array.isArray(c.hubs) || c.hubs.length < 2) return null;  // nur bei Multi-Hub
         const idx = this._edCurrentHubIdx();
         const hub = c.hubs[idx] || {};
+        const color = hcHubColor(hub, idx);
         const banner = document.createElement('div');
-        banner.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:10px;background:rgba(3,169,244,0.12);border-left:3px solid var(--primary-color,#03a9f4);border-radius:4px;font-size:12px;';
+        banner.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:10px;background:${color}22;border-left:3px solid ${color};border-radius:4px;font-size:12px;`;
         banner.innerHTML = `<span style="font-weight:600;">Bearbeitet Hub:</span> <span>${escHtml(hub.name || 'Hub ' + (idx + 1))}</span> <span style="opacity:0.6">(Auswahl unter Hub-Konfiguration)</span>`;
         return banner;
     }
@@ -2655,9 +2695,25 @@ class HarmonyCompanionEditor extends HTMLElement {
         };
         offsetRow.appendChild(mkOffset('Display-Offset Breite (px)',  'display_offset_w', HC_DEFAULT_OFFSET_W));
         offsetRow.appendChild(mkOffset('Display-Offset Höhe (px)',    'display_offset_h', HC_DEFAULT_OFFSET_H));
+
+        // Display-Hintergrundfarbe (Smoked-Glass)
+        const bgWrap = document.createElement('div');
+        bgWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const bgLbl  = document.createElement('label');
+        bgLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);';
+        bgLbl.textContent = 'Display-Hintergrundfarbe';
+        const bgInp  = document.createElement('input');
+        bgInp.type = 'color';
+        bgInp.value = (this._config && this._config.display_bg_color) || HC_DEFAULT_DISPLAY_BG;
+        bgInp.style.cssText = 'width:60px;height:30px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        bgInp.oninput = (e) => this._patchTop('display_bg_color', e.target.value);
+        bgWrap.appendChild(bgLbl);
+        bgWrap.appendChild(bgInp);
+        offsetRow.appendChild(bgWrap);
+
         const offInfo = document.createElement('div');
-        offInfo.style.cssText = 'font-size:11px;color:var(--secondary-text-color);font-style:italic;';
-        offInfo.textContent = 'Verschiebt die rechte/untere Display-Grenze. Basis: 320×126 px.';
+        offInfo.style.cssText = 'font-size:11px;color:var(--secondary-text-color);font-style:italic;flex-basis:100%;';
+        offInfo.textContent = 'Display-Offset verschiebt die rechte/untere Grenze (Basis 320×126). Hintergrundfarbe = Smoked-Glass-Ton.';
         offsetRow.appendChild(offInfo);
         body.appendChild(offsetRow);
 
