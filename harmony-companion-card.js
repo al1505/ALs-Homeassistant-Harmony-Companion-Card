@@ -2,9 +2,10 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.4.0 (Responsive Display-Skalierung: #display-canvas mit transform:scale() passt
-//                  Layout-Elemente proportional an die tatsächliche Kartenbreite an.
-//                  ResizeObserver reaktiviert Skalierung bei Viewport-Änderungen (Mobile/Desktop).)
+// Version: 5.4.1 (Bugfix: Layout-Positionen (Power/Menu/Activity) auch bei nicht-spielendem
+//                  Kodi und PowerOff korrekt (applyMediaLayout + lastLayoutMode-Fallback).
+//                  Bugfix: Hub-Dropdown-Items nicht neu bauen wenn Dropdown offen →
+//                  Maus-Klicks auf Items verlässlich (kein Zerstören der Items mid-click).)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -12,7 +13,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.4.0";
+const HC_VERSION = "5.4.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -1036,8 +1037,12 @@ class HarmonyCompanionCard extends HTMLElement {
         }
         if (prev) prev.disabled = false;
         if (next) next.disabled = false;
-        // Dropdown-Items befüllen
-        if (drop) {
+        // Dropdown-Items befuellen — NICHT wenn Dropdown gerade offen ist:
+        // _renderHubBar wird bei jedem HA-State-Update aufgerufen; drop.innerHTML='' wuerde
+        // Items zerstoeren waehrend der User mit der Maus darauf zielt → Klick trifft ins Leere.
+        const dropParent = root.getElementById('hub-current');
+        const dropIsOpen = dropParent && dropParent.classList.contains('open');
+        if (drop && !dropIsOpen) {
             drop.innerHTML = '';
             hubs.forEach((h, i) => {
                 const item = document.createElement('div');
@@ -1686,14 +1691,26 @@ class HarmonyCompanionCard extends HTMLElement {
         // TV-Modus-Klasse: Logo links, groesseres Padding-Left fuer Text-Spalte.
         // Immer aktiv wenn TV-Aktivitaet und playing – auch ohne Logo-Bild
         // (Fallback-TV-Icon wird angezeigt).
-        const useTVLayout    = isTVAct && isPlaying;
-        const useMediaMode   = !isTVAct && isPlaying;
-        display.classList.toggle('tv-mode',    useTVLayout);
-        display.classList.toggle('media-mode', useMediaMode);
+        const useTVLayout      = isTVAct && isPlaying;
+        // Media-Layout: immer wenn Nicht-TV-Aktivitaet aktiv ist (auch ohne isPlaying —
+        // z.B. Kodi an aber kein Film laeuft, damit Power/Menu an konfigurierten Positionen bleiben).
+        const applyMediaLayout = !isTVAct && !!act && act !== 'PowerOff';
+        // PowerOff: letztes bekanntes Layout-Mode wiederverwenden (Power-Button-Position bleibt erhalten).
+        if (useTVLayout)           this._lastLayoutMode = 'tv';
+        else if (applyMediaLayout) this._lastLayoutMode = 'media';
+        const isPowerOff = !act || act === 'PowerOff';
+        const layoutMode = useTVLayout      ? 'tv'
+                         : applyMediaLayout ? 'media'
+                         : (isPowerOff && this._lastLayoutMode) ? this._lastLayoutMode
+                         : null;
+        display.classList.toggle('tv-mode',    layoutMode === 'tv');
+        display.classList.toggle('media-mode', layoutMode === 'media');
 
-        // Layout-Inline-Styles aus Config anwenden (TV oder Kodi)
-        if      (useTVLayout)    this._applyDisplayLayout(display, 'tv');
-        else if (useMediaMode)   this._applyDisplayLayout(display, 'media');
+        // Layout-Inline-Styles aus Config anwenden
+        if (layoutMode) this._applyDisplayLayout(display, layoutMode);
+        // Im Idle/PowerOff-Zustand Hintergrund-Panels/Linien entfernen (Display wirkt ausgeschaltet).
+        // _applyDisplayLayout hat sie ggf. wieder hinzugefuegt – hier explizit entfernen.
+        if (!isPlaying) display.querySelectorAll('.hc-panel,.hc-line').forEach(el => el.remove());
 
         // ---- Restzeit-Anzeige (1h 34m bis 21:35) ----
         // Quellen: OpenWebIF endStr ODER HA-Entity media_duration/_position
