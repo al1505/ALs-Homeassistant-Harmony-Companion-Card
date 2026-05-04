@@ -2,9 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.2.0 (Per-Hub-Konfiguration: TV-Receiver, Activities, Slots, Buttons werden
-//                  jetzt pro Hub gespeichert. Display-Layout bleibt global.
-//                  Editor-Reihenfolge: Hub → Layout (global) → per-Hub-Sections mit Banner.)
+// Version: 5.2.1 (Slot-Auto-Grow entfernt (nur noch + Slot hinzufuegen),
+//                  neue Default-Layouts fuer TV und Media (370×147 Display))
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -12,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.2.0";
+const HC_VERSION = "5.2.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -120,43 +119,31 @@ function hcPanelBg(def) {
     return `rgba(${r},${g},${b},${a})`;
 }
 
-// Default-Layout (alle Positionen relativ zu dispW/dispH).
-// Zeit unten-rechts: dispW-35 .. dispW (Box-Rechtsende = Display-Rand).
-function hcDefaultLayout(mode, dispW, dispH) {
-    // Default-Display: 370×147 (Basis 320×126 + Offset 50×21)
-    if (dispW === undefined) dispW = HC_BASE_W + HC_DEFAULT_OFFSET_W;
-    if (dispH === undefined) dispH = HC_BASE_H + HC_DEFAULT_OFFSET_H;
-    // Element-relative Positionen: rechte/untere Elemente am dispW/dispH-Rand
-    const yMid24 = Math.round((dispH - 24) / 2);   // Power (h:24)
-    const yMid36 = Math.round((dispH - 36) / 2);   // Logo L (h:36)
-    const yBot   = dispH - 9;                       // Zeit/Beg-End (h:9)
-    const yTitle = yBot - 15 - 6;                   // Titel (h:15) mit 6px Abstand zu Zeit
-    const xZeit  = dispW - 35;                      // Zeit rechtsbündig (w:35)
-    const xSpan  = xZeit - 5 - 65;                  // Beg-End vor Zeit (5px Abstand, w:65)
-
-    const xMenu = dispW - 25;  // Menü oben-rechts
+// Default-Layout — fixe Werte für 370×147px Display (Offset 50×21).
+// dispW/dispH bleiben Parameter für Vorwärtskompatibilität, werden aber nicht mehr
+// für relative Positionen verwendet (Werte vom Nutzer als Standard festgelegt).
+function hcDefaultLayout(mode /*, dispW, dispH */) {
     if (mode === 'tv') return {
-        power:    { left: 0,     top: yMid24, w: 25,  h: 24, visible: true },
-        menu:     { left: xMenu, top: 0,      w: 25,  h: 24, visible: true },  // Burger oben-rechts
-        panel:    { visible: false },                                          // optional, vom Nutzer
-        logo:     { left: 30,    top: yMid36, w: 60,  h: 36, visible: true },  // Logo L
-        activity: { left: 95,    top: 3,      w: 80,  h: 9,  visible: true },
-        channel:  { left: 95,    top: 15,     w: 160, h: 18, visible: true },
-        title:    { left: 95,    top: yTitle, w: 200, h: 15, visible: true },
-        time:     { left: xZeit, top: yBot,   w: 35,  h: 9,  visible: true },
-        timespan: { left: xSpan, top: yBot,   w: 65,  h: 9,  visible: true },
+        power:    { left: 0,   top: 0,   w: 25,  h: 24, visible: true },
+        menu:     { left: 345, top: 0,   w: 25,  h: 24, visible: true },
+        panel:    { left: 0,   top: 102, w: 370, h: 42, bgColor: '#6d7083', radius: 4, bgAlpha: 0.37, visible: true },
+        logo:     { left: 0,   top: 105, w: 60,  h: 36, visible: true },
+        activity: { left: 30,  top: 12,  w: 65,  h: 12, visible: true, fontSize: 12, fontFamily: 'Roboto, sans-serif' },
+        channel:  { left: 65,  top: 108, w: 140, h: 15, visible: true },
+        title:    { left: 65,  top: 126, w: 200, h: 15, visible: true },
+        time:     { left: 330, top: 117, w: 35,  h: 9,  visible: true },
+        timespan: { left: 300, top: 132, w: 65,  h: 9,  visible: true, fontSize: 10 },
     };
     // Kodi / Media-Modus (kein Logo/Sender)
     return {
-        power:    { left: 0,     top: yMid24,    w: 25,  h: 24, visible: true },
-        menu:     { left: xMenu, top: 0,         w: 25,  h: 24, visible: true },
-        panel:    { visible: false },
+        power:    { left: 0,   top: 0,   w: 25,  h: 24, visible: true },
+        menu:     { left: 345, top: 0,   w: 25,  h: 24, visible: true },
         logo:     { visible: false },
         channel:  { visible: false },
-        activity: { left: 35,    top: 3,         w: 80,  h: 9,  visible: true },
-        title:    { left: 0,     top: yTitle,    w: dispW - 25, h: 15, visible: true },
-        time:     { left: xZeit, top: yBot,      w: 35,  h: 9,  visible: true },
-        timespan: { left: xSpan, top: yBot,      w: 65,  h: 9,  visible: true },
+        activity: { left: 30,  top: 15,  w: 80,  h: 9,  visible: true },
+        title:    { left: 5,   top: 108, w: 305, h: 15, visible: true },
+        time:     { left: 5,   top: 129, w: 35,  h: 9,  visible: true },
+        timespan: { left: 45,  top: 129, w: 65,  h: 9,  visible: true },
     };
 }
 
@@ -3715,10 +3702,13 @@ class HarmonyCompanionEditor extends HTMLElement {
             const s = slots[prefix + '_' + i];
             if (s && (s.text || s.icon || s.action)) lastFilled = i;
         }
+        // Kein Auto-Grow mehr — nur "+ Slot hinzufuegen" fuegt neue Slots hinzu.
+        // actMin: bei Aktivitaeten-Slots eine Zeile pro bekannter Aktivitaet als Startwert.
+        // Bei Extra-Slots (bot) und ohne Aktivitaeten zeigen wir mindestens 1 Slot.
         const actMin = (prefix === 'act' && this._activitiesList) ? this._activitiesList.length : 0;
-        const autoMin = Math.max(actMin + 1, lastFilled + 1, 1);
+        const baseMin = Math.max(actMin, lastFilled, 1);
         const explicit = this._slotCounts[prefix];
-        const showCount = Math.min(9, explicit !== null ? Math.max(lastFilled, explicit) : autoMin);
+        const showCount = Math.min(9, explicit !== null ? Math.max(lastFilled, explicit) : baseMin);
 
         for (let i = 1; i <= showCount; i++) body.appendChild(this._slotRow(prefix, i, showCount));
 
