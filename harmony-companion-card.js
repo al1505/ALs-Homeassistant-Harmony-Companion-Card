@@ -2,10 +2,8 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.4.1 (Bugfix: Layout-Positionen (Power/Menu/Activity) auch bei nicht-spielendem
-//                  Kodi und PowerOff korrekt (applyMediaLayout + lastLayoutMode-Fallback).
-//                  Bugfix: Hub-Dropdown-Items nicht neu bauen wenn Dropdown offen →
-//                  Maus-Klicks auf Items verlässlich (kein Zerstören der Items mid-click).)
+// Version: 5.4.2 (Bugfix: PowerOff-Zustand — kein Layout anwenden, Power-Button ausblenden.
+//                  Verhindert Overlap von Power-Button-Circle mit "PowerOff"-Text.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -13,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.4.1";
+const HC_VERSION = "5.4.2";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -1695,14 +1693,9 @@ class HarmonyCompanionCard extends HTMLElement {
         // Media-Layout: immer wenn Nicht-TV-Aktivitaet aktiv ist (auch ohne isPlaying —
         // z.B. Kodi an aber kein Film laeuft, damit Power/Menu an konfigurierten Positionen bleiben).
         const applyMediaLayout = !isTVAct && !!act && act !== 'PowerOff';
-        // PowerOff: letztes bekanntes Layout-Mode wiederverwenden (Power-Button-Position bleibt erhalten).
-        if (useTVLayout)           this._lastLayoutMode = 'tv';
-        else if (applyMediaLayout) this._lastLayoutMode = 'media';
-        const isPowerOff = !act || act === 'PowerOff';
         const layoutMode = useTVLayout      ? 'tv'
                          : applyMediaLayout ? 'media'
-                         : (isPowerOff && this._lastLayoutMode) ? this._lastLayoutMode
-                         : null;
+                         : null;  // PowerOff: kein Layout — Power-Button wird unten explizit ausgeblendet
         display.classList.toggle('tv-mode',    layoutMode === 'tv');
         display.classList.toggle('media-mode', layoutMode === 'media');
 
@@ -1711,6 +1704,8 @@ class HarmonyCompanionCard extends HTMLElement {
         // Im Idle/PowerOff-Zustand Hintergrund-Panels/Linien entfernen (Display wirkt ausgeschaltet).
         // _applyDisplayLayout hat sie ggf. wieder hinzugefuegt – hier explizit entfernen.
         if (!isPlaying) display.querySelectorAll('.hc-panel,.hc-line').forEach(el => el.remove());
+        // PowerOff: Power-Button ausblenden (Geraet ist aus, Button nicht sinnvoll + verhindert Overlap mit Text).
+        if (!layoutMode && pwrEl) pwrEl.style.display = 'none';
 
         // ---- Restzeit-Anzeige (1h 34m bis 21:35) ----
         // Quellen: OpenWebIF endStr ODER HA-Entity media_duration/_position
