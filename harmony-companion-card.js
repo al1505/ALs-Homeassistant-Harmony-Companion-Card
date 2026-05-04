@@ -2,7 +2,10 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.0.0 (Start v5-Entwicklungslinie — basiert auf v4.9.1)
+// Version: 5.1.0 (Multi-Hub-Support: bis zu 5 Harmony-Hubs in einer Card,
+//                  Hub-Bar oben mit Online-Status + Dropdown, Swipe-Geste links/rechts,
+//                  Editor: Hub-Tabs mit Add/Remove-Buttons.
+//                  Backward-Compat: Single-Hub-Configs funktionieren unverändert.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -10,7 +13,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.0.0";
+const HC_VERSION = "5.1.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -172,6 +175,16 @@ const _hcRelativeLum = (r, g, b) => {
     return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 };
 
+// Multi-Hub: maximale Anzahl konfigurierbarer Harmony-Hubs in einer Card
+const HC_MAX_HUBS = 5;
+// Per-Hub-Felder (werden vom aktiven Hub uebernommen, nicht vom Top-Level Config)
+const HC_HUB_FIELDS = [
+    'name', 'entity', 'config_file',
+    'activity_media', 'activity_camera',
+    'enigma2_url', 'enigma2_entity', 'enigma2_activities', 'epg_grab_interval',
+    'buttons', 'dynamic_slots',
+];
+
 // Tasten die einen Kanalwechsel ausloesen → triggern verzoegerten EPG-Refresh
 const HC_CHANNEL_BTNS = new Set([
     'ch_up', 'ch_down',
@@ -240,6 +253,76 @@ class HarmonyCompanionCard extends HTMLElement {
         return HC_BASE_H + (Number.isFinite(o) ? o : HC_DEFAULT_OFFSET_H);
     }
 
+    // ── Multi-Hub-Helpers ───────────────────────────────────────────────────
+    // Liefert Array aller konfigurierten Hubs (max HC_MAX_HUBS).
+    // Backward-Compat: wenn _origConfig.hubs nicht gesetzt → baut Single-Hub aus Top-Level.
+    _getHubs() {
+        const c = this._origConfig;
+        if (!c) return [];
+        if (Array.isArray(c.hubs) && c.hubs.length > 0) {
+            return c.hubs.slice(0, HC_MAX_HUBS);
+        }
+        if (c.entity || c.config_file) {
+            return [this._buildLegacyHub(c)];
+        }
+        return [];
+    }
+
+    _buildLegacyHub(c) {
+        const hub = { name: c.name || 'Hub' };
+        HC_HUB_FIELDS.forEach(f => { if (c[f] !== undefined) hub[f] = c[f]; });
+        return hub;
+    }
+
+    // Aktuell aktiver Hub
+    _currentHub() {
+        const hubs = this._getHubs();
+        if (hubs.length === 0) return {};
+        const idx = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
+        return hubs[idx] || {};
+    }
+
+    // Online-Status eines Hubs anhand der Remote-Entity (state !== unavailable/unknown)
+    _isHubOnline(hub) {
+        if (!hub || !hub.entity || !this._hass) return false;
+        const st = this._hass.states[hub.entity];
+        if (!st) return false;
+        return st.state !== 'unavailable' && st.state !== 'unknown';
+    }
+
+    // Aktiven Hub als this.config sichtbar machen — vorhandener Code (this.config.entity etc.)
+    // arbeitet danach automatisch mit dem aktiven Hub.
+    _applyActiveHub() {
+        if (!this._origConfig) return;
+        const cfg = JSON.parse(JSON.stringify(this._origConfig));
+        const hubs = this._getHubs();
+        const idx = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
+        const hub = hubs[idx] || {};
+        HC_HUB_FIELDS.forEach(f => {
+            if (hub[f] !== undefined) cfg[f] = hub[f];
+        });
+        this.config = cfg;
+    }
+
+    // Aktiven Hub wechseln
+    _switchToHub(idx) {
+        const hubs = this._getHubs();
+        if (hubs.length === 0) return;
+        const newIdx = Math.max(0, Math.min(hubs.length - 1, idx));
+        if (newIdx === this._activeHubIndex) return;
+        this._activeHubIndex = newIdx;
+        try { localStorage.setItem('hc_active_hub', String(newIdx)); } catch(e) {}
+        this._applyActiveHub();
+        // Per-Hub-Daten zurücksetzen, damit beim nächsten Render neu geladen wird
+        this._parsedHarmonyData = { Devices: {}, Activities: {} };
+        this._tvData = null;
+        this._tvGrabUrl = null;
+        this._tvLastTitle = null;
+        this._lastActivity = null;
+        this._lastMediaFp = '';
+        this._fetchConfigData();
+    }
+
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
@@ -277,8 +360,22 @@ class HarmonyCompanionCard extends HTMLElement {
     }
 
     setConfig(config) {
-        if (!config.entity) throw new Error('Harmony Hub Entity ID is required.');
-        this.config = config;
+        // Multi-Hub-Validierung: entweder Top-Level entity ODER mindestens ein Hub mit entity
+        const hasTopLevelEntity = !!config.entity;
+        const hasHubEntity = Array.isArray(config.hubs) && config.hubs.some(h => h && h.entity);
+        if (!hasTopLevelEntity && !hasHubEntity) {
+            throw new Error('Harmony Hub Entity ID is required.');
+        }
+        this._origConfig = JSON.parse(JSON.stringify(config));
+        // Aktiven Hub aus localStorage oder Config laden
+        try {
+            const stored = localStorage.getItem('hc_active_hub');
+            if (stored !== null) this._activeHubIndex = parseInt(stored, 10) || 0;
+            else this._activeHubIndex = Number(this._origConfig.active_hub) || 0;
+        } catch(e) {
+            this._activeHubIndex = Number(this._origConfig.active_hub) || 0;
+        }
+        this._applyActiveHub();
         this._fetchConfigData();
     }
 
@@ -485,6 +582,53 @@ class HarmonyCompanionCard extends HTMLElement {
                     background: var(--remote-bg); border-radius: 36px; padding: 14px;
                     box-shadow: 0px 10px 30px rgba(0,0,0,0.5); display: grid; gap: 8px;
                 }
+                /* Hub-Bar (oberhalb des Displays) */
+                .hub-bar {
+                    display: flex; align-items: center; gap: 6px;
+                    padding: 4px 6px; margin-bottom: 4px;
+                    background: rgba(255,255,255,0.04); border-radius: 14px;
+                    user-select: none;
+                }
+                .hub-arrow {
+                    background: transparent; color: rgba(255,255,255,0.85);
+                    border: 1px solid rgba(255,255,255,0.18); border-radius: 50%;
+                    width: 26px; height: 26px; cursor: pointer;
+                    font-size: 18px; line-height: 22px; padding: 0;
+                    flex-shrink: 0;
+                }
+                .hub-arrow:active { background: rgba(255,255,255,0.12); }
+                .hub-arrow:disabled { opacity: 0.3; cursor: default; }
+                .hub-current {
+                    flex: 1; display: flex; align-items: center; justify-content: center;
+                    gap: 6px; padding: 4px 12px; cursor: pointer;
+                    color: rgba(255,255,255,0.92); font-size: 13px; font-weight: 600;
+                    border-radius: 10px; position: relative;
+                }
+                .hub-current:hover { background: rgba(255,255,255,0.06); }
+                .hub-status-dot {
+                    width: 8px; height: 8px; border-radius: 50%;
+                    background: #888; flex-shrink: 0;
+                    box-shadow: 0 0 0 2px rgba(0,0,0,0.25);
+                }
+                .hub-status-dot.online  { background: #2ecc71; }
+                .hub-status-dot.offline { background: #c0392b; }
+                .hub-caret { font-size: 10px; opacity: 0.6; margin-left: 2px; }
+                .hub-dropdown {
+                    display: none; position: absolute; top: 100%; left: 0; right: 0;
+                    margin-top: 4px; padding: 4px 0; z-index: 100;
+                    background: var(--card-background-color, #2a2a2a);
+                    border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+                    max-height: 240px; overflow-y: auto;
+                }
+                .hub-current.open .hub-dropdown { display: block; }
+                .hub-dropdown-item {
+                    display: flex; align-items: center; gap: 8px;
+                    padding: 8px 12px; cursor: pointer; font-size: 13px;
+                    color: var(--primary-text-color, #fff);
+                }
+                .hub-dropdown-item:hover { background: rgba(255,255,255,0.08); }
+                .hub-dropdown-item.active { background: rgba(3,169,244,0.15); }
                 .display-zone {
                     background: linear-gradient(145deg, #d4d4d4, #f0f0f0);
                     border-radius: 8px; min-height: 60px;
@@ -634,6 +778,17 @@ class HarmonyCompanionCard extends HTMLElement {
             </style>
             <div class="remote-body" id="remote-root">
 
+                <div class="hub-bar" id="hub-bar" style="display:none;">
+                    <button class="hub-arrow" id="hub-prev" type="button" aria-label="Vorheriger Hub">‹</button>
+                    <div class="hub-current" id="hub-current">
+                        <span class="hub-status-dot" id="hub-status-dot"></span>
+                        <span class="hub-name" id="hub-name">—</span>
+                        <span class="hub-caret">▾</span>
+                        <div class="hub-dropdown" id="hub-dropdown" role="menu"></div>
+                    </div>
+                    <button class="hub-arrow" id="hub-next" type="button" aria-label="Nächster Hub">›</button>
+                </div>
+
                 <div class="display-zone" id="harmony-display">
                     <div id="display-bg"></div>
                     <div id="display-gradient"></div>
@@ -727,6 +882,9 @@ class HarmonyCompanionCard extends HTMLElement {
             }));
         };
 
+        // Hub-Bar (Multi-Hub-Auswahl)
+        this._wireHubBar();
+
         // Progress-Bar: Klick = Seek
         const progBar = this.shadowRoot.getElementById('display-progress');
         if (progBar) progBar.onclick = (e) => {
@@ -740,6 +898,108 @@ class HarmonyCompanionCard extends HTMLElement {
         this._lastActivity = null;
         this._updateZoneVisibility('PowerOff');
         if (this._hass) this._updateLiveUI();
+    }
+
+    // -------- HUB-BAR (Multi-Hub-UI) --------
+    _wireHubBar() {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const prev    = root.getElementById('hub-prev');
+        const next    = root.getElementById('hub-next');
+        const cur     = root.getElementById('hub-current');
+        const drop    = root.getElementById('hub-dropdown');
+
+        if (prev) prev.onclick = (e) => { e.stopPropagation(); this._cycleHub(-1); };
+        if (next) next.onclick = (e) => { e.stopPropagation(); this._cycleHub(1); };
+        if (cur)  cur.onclick  = (e) => {
+            e.stopPropagation();
+            cur.classList.toggle('open');
+        };
+        // Klick außerhalb schließt Dropdown
+        document.addEventListener('click', () => {
+            if (cur) cur.classList.remove('open');
+        });
+        // Swipe-Geste auf der Display-Zone für Hub-Wechsel
+        const display = root.getElementById('harmony-display');
+        if (display) {
+            let startX = null, startY = null, t0 = 0;
+            display.addEventListener('pointerdown', (e) => {
+                if (this._getHubs().length < 2) return;
+                startX = e.clientX; startY = e.clientY; t0 = Date.now();
+            });
+            display.addEventListener('pointerup', (e) => {
+                if (startX === null) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const dt = Date.now() - t0;
+                startX = null; startY = null;
+                if (dt > 600) return;
+                if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+                this._cycleHub(dx > 0 ? -1 : 1);
+            });
+            display.addEventListener('pointercancel', () => { startX = null; startY = null; });
+        }
+
+        this._renderHubBar();
+    }
+
+    _cycleHub(dir) {
+        const hubs = this._getHubs();
+        if (hubs.length < 2) return;
+        const cur = this._activeHubIndex || 0;
+        const next = (cur + dir + hubs.length) % hubs.length;
+        this._switchToHub(next);
+    }
+
+    // Aktualisiert Hub-Bar-Inhalt (Name, Status, Dropdown). Bei <2 Hubs wird die Bar versteckt.
+    _renderHubBar() {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const bar      = root.getElementById('hub-bar');
+        const prev     = root.getElementById('hub-prev');
+        const next     = root.getElementById('hub-next');
+        const dot      = root.getElementById('hub-status-dot');
+        const nameEl   = root.getElementById('hub-name');
+        const drop     = root.getElementById('hub-dropdown');
+        if (!bar) return;
+        const hubs = this._getHubs();
+        if (hubs.length < 2) {
+            bar.style.display = 'none';
+            return;
+        }
+        bar.style.display = 'flex';
+        const idx = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
+        const cur = hubs[idx];
+        if (nameEl) nameEl.textContent = cur.name || ('Hub ' + (idx + 1));
+        if (dot) {
+            dot.classList.remove('online','offline');
+            dot.classList.add(this._isHubOnline(cur) ? 'online' : 'offline');
+            dot.title = this._isHubOnline(cur) ? 'Online' : 'Offline';
+        }
+        if (prev) prev.disabled = false;
+        if (next) next.disabled = false;
+        // Dropdown-Items befüllen
+        if (drop) {
+            drop.innerHTML = '';
+            hubs.forEach((h, i) => {
+                const item = document.createElement('div');
+                item.className = 'hub-dropdown-item' + (i === idx ? ' active' : '');
+                item.setAttribute('role', 'menuitem');
+                const d = document.createElement('span');
+                d.className = 'hub-status-dot ' + (this._isHubOnline(h) ? 'online' : 'offline');
+                const n = document.createElement('span');
+                n.textContent = h.name || ('Hub ' + (i + 1));
+                item.appendChild(d);
+                item.appendChild(n);
+                item.onclick = (ev) => {
+                    ev.stopPropagation();
+                    const curEl = root.getElementById('hub-current');
+                    if (curEl) curEl.classList.remove('open');
+                    if (i !== idx) this._switchToHub(i);
+                };
+                drop.appendChild(item);
+            });
+        }
     }
 
     // -------- ACTIONS --------
@@ -1536,6 +1796,8 @@ class HarmonyCompanionCard extends HTMLElement {
 
     _updateLiveUI() {
         if (!this._hass || !this.config || !this._rendered) return;
+        // Hub-Bar aktualisieren (Online-Status, Name) — jeder Render-Tick
+        this._renderHubBar();
         const stateObj = this._hass.states[this.config.entity];
         if (!stateObj) return;
         const currentAct = (stateObj.attributes && stateObj.attributes.current_activity) || 'PowerOff';
@@ -2126,18 +2388,102 @@ class HarmonyCompanionEditor extends HTMLElement {
     // -------- SECTION: HUB --------
     _sectionHub() {
         const { det, body } = this._details('sec-hub', 'Hub-Konfiguration');
+        const hubs = this._edGetHubs();
+        if (!this._edActiveHub || this._edActiveHub >= hubs.length) this._edActiveHub = 0;
+
+        // Hub-Tabs + Add-Button
+        const tabRow = document.createElement('div');
+        tabRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px;';
+        hubs.forEach((h, i) => {
+            const isActive = (i === this._edActiveHub);
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.textContent = (h.name || ('Hub ' + (i + 1)));
+            tab.style.cssText = 'padding:4px 12px;border-radius:14px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;' +
+                (isActive ? 'background:var(--primary-color,#03a9f4);color:#fff;border-color:var(--primary-color,#03a9f4);'
+                          : 'background:transparent;color:inherit;');
+            tab.onclick = () => { this._edActiveHub = i; this._buildDOM(); };
+            tabRow.appendChild(tab);
+        });
+        if (hubs.length < HC_MAX_HUBS) {
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.textContent = '+ Hub hinzufügen';
+            addBtn.style.cssText = 'padding:4px 10px;border-radius:14px;border:1px dashed var(--divider-color,#ccc);background:transparent;color:inherit;cursor:pointer;font-size:12px;';
+            addBtn.onclick = () => {
+                const next = this._edGetHubs().slice();
+                next.push({ name: 'Hub ' + (next.length + 1), entity: '', config_file: '/local/harmony.conf' });
+                this._edActiveHub = next.length - 1;
+                this._patchTop('hubs', next);
+                this._buildDOM();
+            };
+            tabRow.appendChild(addBtn);
+        }
+        body.appendChild(tabRow);
+
+        const idx = this._edActiveHub;
+        const hub = hubs[idx] || {};
+
+        // Name
+        const nameInp = document.createElement('ha-textfield');
+        nameInp.label = 'Hub-Name (Anzeigename)';
+        nameInp.value = hub.name || '';
+        nameInp.onchange = (e) => this._edPatchHub(idx, 'name', e.target.value);
+        body.appendChild(nameInp);
+
+        // Entity
         body.appendChild(this._labeled('Harmony Hub Entitaet',
-            this._haSelector({ entity: { domain: 'remote' } }, this._config.entity || '',
-                (v) => this._patchTop('entity', v || ''))
+            this._haSelector({ entity: { domain: 'remote' } }, hub.entity || '',
+                (v) => this._edPatchHub(idx, 'entity', v || ''))
         ));
+
+        // Config-Datei
         const cfg = document.createElement('ha-textfield');
         cfg.label = 'Pfad zur Config-Datei';
         cfg.helper = 'z.B. /local/harmony_12563120.conf';
         cfg.helperPersistent = true;
-        cfg.value = this._config.config_file || '';
-        cfg.onchange = (e) => this._patchTop('config_file', e.target.value);
+        cfg.value = hub.config_file || '';
+        cfg.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
         body.appendChild(cfg);
+
+        // Hub entfernen (nur wenn > 1 Hub)
+        if (hubs.length > 1) {
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.textContent = 'Diesen Hub entfernen';
+            delBtn.style.cssText = 'margin-top:10px;padding:6px 12px;border-radius:6px;border:1px solid #c0392b;cursor:pointer;font-size:12px;background:transparent;color:#c0392b;align-self:flex-start;';
+            delBtn.onclick = () => {
+                const next = this._edGetHubs().filter((_, i) => i !== idx);
+                this._edActiveHub = Math.max(0, idx - 1);
+                this._patchTop('hubs', next);
+                this._buildDOM();
+            };
+            body.appendChild(delBtn);
+        }
+
         return det;
+    }
+
+    // Editor: Liste aller Hubs (aus this._config.hubs ODER Legacy aus Top-Level)
+    _edGetHubs() {
+        const c = this._config || {};
+        if (Array.isArray(c.hubs) && c.hubs.length > 0) return c.hubs.slice(0, HC_MAX_HUBS);
+        if (c.entity || c.config_file) {
+            const hub = { name: 'Hub' };
+            HC_HUB_FIELDS.forEach(f => { if (c[f] !== undefined) hub[f] = c[f]; });
+            return [hub];
+        }
+        return [{ name: 'Hub 1', entity: '', config_file: '/local/harmony.conf' }];
+    }
+
+    // Editor: Feld eines Hubs ändern und in config.hubs[] zurückschreiben
+    _edPatchHub(idx, field, value) {
+        const hubs = this._edGetHubs().slice();
+        const cur  = { ...(hubs[idx] || {}) };
+        if (value === '' || value == null) delete cur[field];
+        else cur[field] = value;
+        hubs[idx] = cur;
+        this._patchTop('hubs', hubs);
     }
 
     // -------- SECTION: DISPLAY LAYOUT (visueller Editor) --------
