@@ -2,8 +2,10 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.2.1 (Slot-Auto-Grow entfernt (nur noch + Slot hinzufuegen),
-//                  neue Default-Layouts fuer TV und Media (370×147 Display))
+// Version: 5.3.0 (Smoked-Glass Display, Idle versteckt Panels/Linien/Logo/Menue,
+//                  Editor: Display-Layout zuoberst, per-Hub-Sections in farbigem Rahmen
+//                  mit konfigurierbarer Hub-Farbe, Reihenfolge: TV-Receiver, Activities,
+//                  Tasten, Extra-Slots)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +13,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.2.1";
+const HC_VERSION = "5.3.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -165,11 +167,22 @@ const _hcRelativeLum = (r, g, b) => {
 const HC_MAX_HUBS = 5;
 // Per-Hub-Felder (werden vom aktiven Hub uebernommen, nicht vom Top-Level Config)
 const HC_HUB_FIELDS = [
-    'name', 'entity', 'config_file',
+    'name', 'entity', 'config_file', 'color',
     'activity_media', 'activity_camera',
     'enigma2_url', 'enigma2_entity', 'enigma2_activities', 'epg_grab_interval',
     'buttons', 'dynamic_slots',
 ];
+// Default-Farbpalette für Hub-Rahmen (cycle pro Hub-Index)
+const HC_HUB_COLORS = [
+    '#03a9f4',  // blau (Hub 1)
+    '#27ae60',  // grün
+    '#e67e22',  // orange
+    '#9b59b6',  // lila
+    '#e74c3c',  // rot
+];
+function hcHubColor(hub, idx) {
+    return (hub && hub.color) || HC_HUB_COLORS[(idx || 0) % HC_HUB_COLORS.length];
+}
 
 // Tasten die einen Kanalwechsel ausloesen → triggern verzoegerten EPG-Refresh
 const HC_CHANNEL_BTNS = new Set([
@@ -615,13 +628,20 @@ class HarmonyCompanionCard extends HTMLElement {
                 }
                 .hub-dropdown-item:hover { background: rgba(255,255,255,0.08); }
                 .hub-dropdown-item.active { background: rgba(3,169,244,0.15); }
+                /* Smoked-Glass: dunkles Blau-Grau wie ausgeschaltetes TV-Display */
                 .display-zone {
-                    background: linear-gradient(145deg, #d4d4d4, #f0f0f0);
+                    background:
+                        linear-gradient(135deg, rgba(38,46,62,0.96) 0%, rgba(20,28,42,0.96) 100%);
                     border-radius: 8px; min-height: 60px;
                     display: flex; flex-direction: column; justify-content: center;
-                    color: #333; font-family: inherit;
+                    color: #d8dce4; font-family: inherit;
                     transition: opacity 0.3s ease, height 0.3s ease;
                     padding: 10px 48px 14px 52px; box-sizing: border-box; overflow: hidden; position: relative;
+                    box-shadow:
+                        inset 0 1px 0 rgba(255,255,255,0.06),
+                        inset 0 -1px 0 rgba(0,0,0,0.35),
+                        inset 0 0 22px rgba(0,0,0,0.4);
+                    border: 1px solid rgba(255,255,255,0.06);
                 }
                 /* TV-Modus: alle Elemente absolut positioniert.
                    Höhe wird per JS dynamisch via inline-Style gesetzt (display_offset_h). */
@@ -662,18 +682,20 @@ class HarmonyCompanionCard extends HTMLElement {
                     z-index: 3; width: 36px; height: 36px; border-radius: 50%;
                     display: flex; align-items: center; justify-content: center;
                     cursor: pointer; -webkit-tap-highlight-color: transparent;
-                    background: rgba(0,0,0,0.15); transition: background 0.15s ease;
+                    background: rgba(255,255,255,0.10); color: #e0e4ec;
+                    transition: background 0.15s ease;
                 }
-                #display-power:active { background: rgba(0,0,0,0.35); }
-                #display-power svg { pointer-events: none; }
+                #display-power:active { background: rgba(255,255,255,0.25); }
+                #display-power svg { pointer-events: none; fill: #d8dce4; }
                 #display-dots {
                     position: absolute; top: 6px; right: 6px; z-index: 3;
                     width: 32px; height: 32px; border-radius: 50%;
                     display: none; align-items: center; justify-content: center;
                     cursor: pointer; -webkit-tap-highlight-color: transparent;
                     font-size: 18px; font-weight: bold; letter-spacing: -1px; line-height: 1;
+                    color: #e0e4ec;
                 }
-                #display-dots:active { background: rgba(0,0,0,0.2); }
+                #display-dots:active { background: rgba(255,255,255,0.15); }
                 #display-activity {
                     position: relative; z-index: 2; font-size: 18px; font-weight: bold;
                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
@@ -1599,6 +1621,10 @@ class HarmonyCompanionCard extends HTMLElement {
             if (timeEl)  timeEl.style.display  = 'none';
             const spanIdle = root.getElementById('display-timespan');
             if (spanIdle) spanIdle.style.display = 'none';
+            if (logoEl)  logoEl.style.display = 'none';
+            if (dotsEl)  dotsEl.style.display = 'none';
+            // Panels und Linien werden im Idle-Modus komplett entfernt (kein Hintergrund nötig)
+            display.querySelectorAll('.hc-panel, .hc-line').forEach(el => el.remove());
         }
 
         // Layout-Inline-Styles zuruecksetzen (Vorbereitung fuer _applyDisplayLayout).
@@ -2341,14 +2367,23 @@ class HarmonyCompanionEditor extends HTMLElement {
                 err.textContent = this._loadError;
                 root.appendChild(err);
             }
-            // Hub-Konfiguration + Display-Layout (global / shared)
-            root.appendChild(this._sectionHub());
+            // 1. Display-Layout (global, ganz oben — unabhängig vom Hub)
             root.appendChild(this._sectionLayout());
-            // Per-Hub-Sections — bearbeiten den unter Hub-Konfiguration ausgewaehlten Hub
-            root.appendChild(this._sectionEnigma2());
-            root.appendChild(this._sectionSlots('act', 'Aktivitaeten-Slots (Hauptbereich)'));
-            root.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));
-            root.appendChild(this._sectionButtons());
+            // 2. Hub-Konfiguration (verwaltet alle Hubs, Auswahl des zu bearbeitenden Hubs)
+            root.appendChild(this._sectionHub());
+            // 3-6. Per-Hub-Bundle in farbigem Rahmen (Farbe = Hub-Farbe)
+            const hubs    = this._edGetHubs();
+            const idx     = this._edCurrentHubIdx();
+            const hubObj  = (idx >= 0 && hubs[idx]) ? hubs[idx] : (hubs[0] || {});
+            const hubColor = hcHubColor(hubObj, idx >= 0 ? idx : 0);
+            const perHubWrap = document.createElement('div');
+            perHubWrap.style.cssText = 'border:2px solid ' + hubColor + ';border-radius:12px;padding:8px 8px 6px;margin-top:6px;display:flex;flex-direction:column;gap:12px;background:' + hubColor + '10;';
+            // Reihenfolge der per-Hub-Sections:
+            perHubWrap.appendChild(this._sectionEnigma2());                                 // TV-Receiver
+            perHubWrap.appendChild(this._sectionSlots('act', 'Aktivitaeten-Slots (Hauptbereich)'));
+            perHubWrap.appendChild(this._sectionButtons());                                  // Physische Tasten
+            perHubWrap.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));        // Extra-Slots zuletzt
+            root.appendChild(perHubWrap);
         } catch (err) {
             console.error('Harmony Editor build error:', err);
             this.innerHTML = '<div style="padding:16px;color:var(--error-color,#cc0000);">Editor-Fehler: ' +
@@ -2386,12 +2421,13 @@ class HarmonyCompanionEditor extends HTMLElement {
         tabRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px;';
         hubs.forEach((h, i) => {
             const isActive = (i === this._edActiveHub);
+            const hc = hcHubColor(h, i);
             const tab = document.createElement('button');
             tab.type = 'button';
             tab.textContent = (h.name || ('Hub ' + (i + 1)));
-            tab.style.cssText = 'padding:4px 12px;border-radius:14px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;' +
-                (isActive ? 'background:var(--primary-color,#03a9f4);color:#fff;border-color:var(--primary-color,#03a9f4);'
-                          : 'background:transparent;color:inherit;');
+            tab.style.cssText = 'padding:4px 12px;border-radius:14px;border:2px solid ' + hc + ';cursor:pointer;font-size:12px;font-weight:600;' +
+                (isActive ? `background:${hc};color:#fff;`
+                          : `background:${hc}15;color:inherit;`);
             tab.onclick = () => {
                 if (this._edActiveHub === i) return;
                 this._edActiveHub = i;
@@ -2447,6 +2483,21 @@ class HarmonyCompanionEditor extends HTMLElement {
         cfg.value = hub.config_file || '';
         cfg.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
         body.appendChild(cfg);
+
+        // Hub-Farbe (für Rahmen um per-Hub-Sections)
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:10px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:12px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Hub-Farbe (Rahmen)';
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = hcHubColor(hub, idx);
+        colorInp.style.cssText = 'width:50px;height:30px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.oninput = (e) => this._edPatchHub(idx, 'color', e.target.value);
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorInp);
+        body.appendChild(colorWrap);
 
         // Hub entfernen (nur wenn > 1 Hub)
         if (hubs.length > 1) {
