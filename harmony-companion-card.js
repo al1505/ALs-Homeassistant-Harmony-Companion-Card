@@ -2,9 +2,9 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.3.2 (Bugfix: LCD_BG ueberschrieb Smoked-Glass — Display.background wird nicht
-//                  mehr in applyColors/Idle ueberschrieben. Helle Schrift in Idle.
-//                  Power-Button mit solidem grauem Verlauf statt fast-transparent.)
+// Version: 5.4.0 (Responsive Display-Skalierung: #display-canvas mit transform:scale() passt
+//                  Layout-Elemente proportional an die tatsächliche Kartenbreite an.
+//                  ResizeObserver reaktiviert Skalierung bei Viewport-Änderungen (Mobile/Desktop).)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -12,7 +12,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.3.2";
+const HC_VERSION = "5.4.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -656,6 +656,8 @@ class HarmonyCompanionCard extends HTMLElement {
                 /* TV-Modus: alle Elemente absolut positioniert.
                    Höhe wird per JS dynamisch via inline-Style gesetzt (display_offset_h). */
                 .display-zone.tv-mode { padding: 0; height: 147px; }
+                /* Canvas: Design-Dimensionen fix, transform: scale() skaliert auf tatsächliche Breite */
+                #display-canvas { position: absolute; top: 0; left: 0; transform-origin: top left; }
                 #display-bg {
                     position: absolute; inset: 0; z-index: 0;
                     background-size: cover; background-position: center center;
@@ -818,21 +820,23 @@ class HarmonyCompanionCard extends HTMLElement {
                 </div>
 
                 <div class="display-zone" id="harmony-display">
-                    <div id="display-bg"></div>
-                    <div id="display-gradient"></div>
-                    <!-- Panels werden dynamisch von _applyDisplayLayout erstellt (class: hc-panel) -->
-                    <div id="display-power">
-                        <svg class="svg-icon" viewBox="0 0 24 24"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>
-                    </div>
-                    <div id="display-dots">&#8942;</div>
-                    <div id="display-activity">${errorMsg}</div>
-                    <div id="display-channel" style="display:none;"></div>
-                    <div id="display-title" style="display:none;"></div>
-                    <div id="display-time"></div>
-                    <div id="display-timespan"></div>
-                    <div id="display-logo"></div>
-                    <div id="display-progress" style="display:none;">
-                        <div id="display-progress-fill"></div>
+                    <div id="display-canvas">
+                        <div id="display-bg"></div>
+                        <div id="display-gradient"></div>
+                        <!-- Panels werden dynamisch von _applyDisplayLayout erstellt (class: hc-panel) -->
+                        <div id="display-power">
+                            <svg class="svg-icon" viewBox="0 0 24 24"><path d="M13,3H11V13H13V3M17.83,5.17L16.41,6.59C17.99,7.86 19,9.81 19,12A7,7 0 0,1 12,19A7,7 0 0,1 5,12C5,9.81 6,7.86 7.58,6.58L6.17,5.17C4.23,6.82 3,9.26 3,12A9,9 0 0,0 12,21A9,9 0 0,0 21,12C21,9.26 19.77,6.82 17.83,5.17Z"/></svg>
+                        </div>
+                        <div id="display-dots">&#8942;</div>
+                        <div id="display-activity">${errorMsg}</div>
+                        <div id="display-channel" style="display:none;"></div>
+                        <div id="display-title" style="display:none;"></div>
+                        <div id="display-time"></div>
+                        <div id="display-timespan"></div>
+                        <div id="display-logo"></div>
+                        <div id="display-progress" style="display:none;">
+                            <div id="display-progress-fill"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -933,6 +937,16 @@ class HarmonyCompanionCard extends HTMLElement {
         this._lastActivity = null;
         this._updateZoneVisibility('PowerOff');
         if (this._hass) this._updateLiveUI();
+
+        // ResizeObserver: Display-Canvas neu skalieren wenn die Karte breiter/schmaler wird (z.B. Mobile).
+        if (!this._dispResizeObs) {
+            this._dispResizeObs = new ResizeObserver(() => {
+                const disp = this.shadowRoot && this.shadowRoot.querySelector('.display-zone');
+                if (disp) this._applyDisplayScale(disp);
+            });
+        }
+        const dispZone = this.shadowRoot.querySelector('.display-zone');
+        if (dispZone) { this._dispResizeObs.disconnect(); this._dispResizeObs.observe(dispZone); }
     }
 
     // -------- HUB-BAR (Multi-Hub-UI) --------
@@ -2071,8 +2085,7 @@ class HarmonyCompanionCard extends HTMLElement {
         const layout = {};
         new Set([...Object.keys(defs), ...Object.keys(stored)])
             .forEach(k => { layout[k] = { ...(defs[k] || {}), ...(stored[k] || {}) }; });
-        // Display-Höhe dynamisch via inline-Style (override CSS)
-        display.style.setProperty('height', dispH + 'px', 'important');
+        const canvas = display.querySelector('#display-canvas') || display;
 
         const idMap = {
             power: 'display-power', menu: 'display-dots', logo: 'display-logo',
@@ -2092,7 +2105,7 @@ class HarmonyCompanionCard extends HTMLElement {
                 el = document.createElement('div');
                 el.className = isPanel ? 'hc-panel' : 'hc-line';
                 el.dataset.elemKey = key;
-                display.appendChild(el);
+                canvas.appendChild(el);
             } else {
                 el = display.querySelector('#' + (idMap[key] || ''));
                 if (!el) return;
@@ -2155,6 +2168,24 @@ class HarmonyCompanionCard extends HTMLElement {
                 else                                   el.style.color = '';
             }
         });
+        this._applyDisplayScale(display);
+    }
+
+    // Skaliert den Display-Canvas auf die tatsächliche Breite der Display-Zone.
+    // Wird von _applyDisplayLayout und vom ResizeObserver aufgerufen.
+    _applyDisplayScale(display) {
+        if (!display.classList.contains('tv-mode') && !display.classList.contains('media-mode')) return;
+        const dispW = this._dispW, dispH = this._dispH;
+        const actualW = display.offsetWidth;
+        const scale = actualW > 0 ? actualW / dispW : 1;
+        const canvas = display.querySelector('#display-canvas');
+        if (canvas) {
+            canvas.style.width           = dispW + 'px';
+            canvas.style.height          = dispH + 'px';
+            canvas.style.transform       = `scale(${scale.toFixed(4)})`;
+            canvas.style.transformOrigin = 'top left';
+        }
+        display.style.setProperty('height', Math.round(dispH * scale) + 'px', 'important');
     }
 
     disconnectedCallback() {
@@ -2166,6 +2197,7 @@ class HarmonyCompanionCard extends HTMLElement {
             document.removeEventListener('click', this._hubBarOutsideClick);
             this._hubBarOutsideClick = null;
         }
+        if (this._dispResizeObs) { this._dispResizeObs.disconnect(); this._dispResizeObs = null; }
         this._stopGrabRefresh();
     }
 }
