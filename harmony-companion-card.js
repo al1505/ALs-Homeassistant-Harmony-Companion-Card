@@ -2,10 +2,9 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.1.0 (Multi-Hub-Support: bis zu 5 Harmony-Hubs in einer Card,
-//                  Hub-Bar oben mit Online-Status + Dropdown, Swipe-Geste links/rechts,
-//                  Editor: Hub-Tabs mit Add/Remove-Buttons.
-//                  Backward-Compat: Single-Hub-Configs funktionieren unverändert.)
+// Version: 5.2.0 (Per-Hub-Konfiguration: TV-Receiver, Activities, Slots, Buttons werden
+//                  jetzt pro Hub gespeichert. Display-Layout bleibt global.
+//                  Editor-Reihenfolge: Hub → Layout (global) → per-Hub-Sections mit Banner.)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -13,7 +12,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.1.0";
+const HC_VERSION = "5.2.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2199,7 +2198,9 @@ class HarmonyCompanionEditor extends HTMLElement {
     }
 
     async _fetchConf() {
-        const url = this._config.config_file || '/local/harmony_12563120.conf';
+        // Nutzt config_file vom aktuell editierten Hub (Multi-Hub) ODER Top-Level (Legacy)
+        const hub = this._edCurrentHub();
+        const url = hub.config_file || this._config.config_file || '/local/harmony_12563120.conf';
         try {
             const res = await fetch(url, { cache: 'no-store' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2353,9 +2354,11 @@ class HarmonyCompanionEditor extends HTMLElement {
                 err.textContent = this._loadError;
                 root.appendChild(err);
             }
+            // Hub-Konfiguration + Display-Layout (global / shared)
             root.appendChild(this._sectionHub());
-            root.appendChild(this._sectionEnigma2());
             root.appendChild(this._sectionLayout());
+            // Per-Hub-Sections — bearbeiten den unter Hub-Konfiguration ausgewaehlten Hub
+            root.appendChild(this._sectionEnigma2());
             root.appendChild(this._sectionSlots('act', 'Aktivitaeten-Slots (Hauptbereich)'));
             root.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));
             root.appendChild(this._sectionButtons());
@@ -2402,7 +2405,19 @@ class HarmonyCompanionEditor extends HTMLElement {
             tab.style.cssText = 'padding:4px 12px;border-radius:14px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;' +
                 (isActive ? 'background:var(--primary-color,#03a9f4);color:#fff;border-color:var(--primary-color,#03a9f4);'
                           : 'background:transparent;color:inherit;');
-            tab.onclick = () => { this._edActiveHub = i; this._buildDOM(); };
+            tab.onclick = () => {
+                if (this._edActiveHub === i) return;
+                this._edActiveHub = i;
+                // .conf des neuen Hubs nachladen, damit Befehlsauswahl etc. passt
+                this._loaded = false;
+                this._loading = false;
+                this._buildDOM();
+                this._fetchConf().then(() => {
+                    this._initialized = false;
+                    this._buildDOM();
+                    this._initialized = true;
+                });
+            };
             tabRow.appendChild(tab);
         });
         if (hubs.length < HC_MAX_HUBS) {
@@ -2484,6 +2499,82 @@ class HarmonyCompanionEditor extends HTMLElement {
         else cur[field] = value;
         hubs[idx] = cur;
         this._patchTop('hubs', hubs);
+    }
+
+    // Editor: aktuell zur Bearbeitung ausgewählter Hub (Index in this._config.hubs[])
+    // -1 = Legacy-Modus (kein hubs[]-Array, Top-Level direkt verwenden)
+    _edCurrentHubIdx() {
+        const c = this._config || {};
+        if (Array.isArray(c.hubs) && c.hubs.length > 0) {
+            return Math.max(0, Math.min(c.hubs.length - 1, this._edActiveHub || 0));
+        }
+        return -1;
+    }
+
+    // Editor: aktuell bearbeiteter Hub als Objekt (oder Top-Level für Legacy)
+    _edCurrentHub() {
+        const c = this._config || {};
+        const idx = this._edCurrentHubIdx();
+        if (idx < 0) return c;  // Legacy
+        return c.hubs[idx] || {};
+    }
+
+    // Editor: einzelnes Feld auf aktivem Hub setzen
+    // Multi-Hub → schreibt in config.hubs[idx][field]
+    // Legacy → schreibt direkt auf Top-Level via _patchTop
+    _edSetHubField(field, value) {
+        if (this._edCurrentHubIdx() < 0) {
+            if (value === '' || value == null) {
+                const next = JSON.parse(JSON.stringify(this._config || {}));
+                delete next[field];
+                this._config = next; this._dispatch();
+            } else {
+                this._patchTop(field, value);
+            }
+        } else {
+            this._edPatchHub(this._edCurrentHubIdx(), field, value);
+        }
+    }
+
+    // Editor: komplettes Objekt-Feld am aktiven Hub transformieren (für dynamic_slots, buttons, etc.)
+    _edTransformHubField(field, transformer) {
+        if (this._edCurrentHubIdx() < 0) {
+            const next = JSON.parse(JSON.stringify(this._config || {}));
+            const newVal = transformer(next[field]);
+            if (newVal === undefined || newVal === null ||
+                (typeof newVal === 'object' && Object.keys(newVal).length === 0 && !Array.isArray(newVal)) ||
+                (Array.isArray(newVal) && newVal.length === 0)) {
+                delete next[field];
+            } else {
+                next[field] = newVal;
+            }
+            this._config = next; this._dispatch();
+        } else {
+            const idx = this._edCurrentHubIdx();
+            const hubs = JSON.parse(JSON.stringify((this._config && this._config.hubs) || []));
+            if (!hubs[idx]) hubs[idx] = {};
+            const newVal = transformer(hubs[idx][field]);
+            if (newVal === undefined || newVal === null ||
+                (typeof newVal === 'object' && Object.keys(newVal).length === 0 && !Array.isArray(newVal)) ||
+                (Array.isArray(newVal) && newVal.length === 0)) {
+                delete hubs[idx][field];
+            } else {
+                hubs[idx][field] = newVal;
+            }
+            this._patchTop('hubs', hubs);
+        }
+    }
+
+    // Banner für per-Hub-Sections — zeigt welcher Hub gerade bearbeitet wird
+    _edHubBanner() {
+        const c = this._config || {};
+        if (!Array.isArray(c.hubs) || c.hubs.length < 2) return null;  // nur bei Multi-Hub
+        const idx = this._edCurrentHubIdx();
+        const hub = c.hubs[idx] || {};
+        const banner = document.createElement('div');
+        banner.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:10px;background:rgba(3,169,244,0.12);border-left:3px solid var(--primary-color,#03a9f4);border-radius:4px;font-size:12px;';
+        banner.innerHTML = `<span style="font-weight:600;">Bearbeitet Hub:</span> <span>${escHtml(hub.name || 'Hub ' + (idx + 1))}</span> <span style="opacity:0.6">(Auswahl unter Hub-Konfiguration)</span>`;
+        return banner;
     }
 
     // -------- SECTION: DISPLAY LAYOUT (visueller Editor) --------
@@ -3525,6 +3616,11 @@ class HarmonyCompanionEditor extends HTMLElement {
     // -------- SECTION: ENIGMA2 / OPENWEBIF --------
     _sectionEnigma2() {
         const { det, body } = this._details('sec-enigma2', 'TV-Receiver (OpenWebIF / Enigma2)');
+        const hub = this._edCurrentHub();
+
+        // Hub-Banner (nur bei Multi-Hub)
+        const banner = this._edHubBanner();
+        if (banner) body.appendChild(banner);
 
         // Info-Box
         const info = document.createElement('div');
@@ -3538,8 +3634,8 @@ class HarmonyCompanionEditor extends HTMLElement {
             'HA REST-Sensor fuer EPG-Daten (empfohlen)',
             this._haSelector(
                 { entity: { domain: 'sensor' } },
-                this._config.enigma2_entity || '',
-                (v) => this._patchTop('enigma2_entity', v || undefined)
+                hub.enigma2_entity || '',
+                (v) => this._edSetHubField('enigma2_entity', v || undefined)
             )
         ));
 
@@ -3555,10 +3651,10 @@ class HarmonyCompanionEditor extends HTMLElement {
         grabIntField.min     = '5';
         grabIntField.step    = '5';
         grabIntField.style.cssText = 'flex:1;';
-        grabIntField.value   = String(this._config.epg_grab_interval || 30);
+        grabIntField.value   = String(hub.epg_grab_interval || 30);
         grabIntField.onchange = (e) => {
             const v = Math.max(5, parseInt(e.target.value, 10) || 30);
-            this._patchTop('epg_grab_interval', v);
+            this._edSetHubField('epg_grab_interval', v);
         };
         grabIntRow.appendChild(grabIntField);
         body.appendChild(grabIntRow);
@@ -3571,7 +3667,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             label.textContent = 'Aktivitaeten, die den Receiver nutzen:';
             body.appendChild(label);
 
-            const current = Array.isArray(this._config.enigma2_activities) ? this._config.enigma2_activities : [];
+            const current = Array.isArray(hub.enigma2_activities) ? hub.enigma2_activities : [];
             acts.forEach(actName => {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:6px;';
@@ -3596,22 +3692,23 @@ class HarmonyCompanionEditor extends HTMLElement {
     }
 
     _patchEnigma2Activity(actName, enabled) {
-        const next = JSON.parse(JSON.stringify(this._config));
-        if (!Array.isArray(next.enigma2_activities)) next.enigma2_activities = [];
-        if (enabled) {
-            if (!next.enigma2_activities.includes(actName)) next.enigma2_activities.push(actName);
-        } else {
-            next.enigma2_activities = next.enigma2_activities.filter(a => a !== actName);
-        }
-        if (next.enigma2_activities.length === 0) delete next.enigma2_activities;
-        this._config = next;
-        this._dispatch();
+        this._edTransformHubField('enigma2_activities', (cur) => {
+            let next = Array.isArray(cur) ? cur.slice() : [];
+            if (enabled) {
+                if (!next.includes(actName)) next.push(actName);
+            } else {
+                next = next.filter(a => a !== actName);
+            }
+            return next;
+        });
     }
 
     // -------- SECTION: SLOTS --------
     _sectionSlots(prefix, title) {
         const { det, body } = this._details('sec-slots-' + prefix, title);
-        const slots = this._config.dynamic_slots || {};
+        const banner = this._edHubBanner();
+        if (banner) body.appendChild(banner);
+        const slots = this._edCurrentHub().dynamic_slots || {};
 
         let lastFilled = 0;
         for (let i = 1; i <= 9; i++) {
@@ -3640,7 +3737,8 @@ class HarmonyCompanionEditor extends HTMLElement {
 
     _slotRow(prefix, idx, showCount) {
         const slotId = prefix + '_' + idx;
-        const slot = (this._config.dynamic_slots && this._config.dynamic_slots[slotId]) || {};
+        const hub = this._edCurrentHub();
+        const slot = (hub.dynamic_slots && hub.dynamic_slots[slotId]) || {};
         let defaultAction = '';
         if (prefix === 'act' && !slot.action && this._activitiesList && this._activitiesList[idx - 1]) {
             defaultAction = this._activitiesList[idx - 1].actionValue;
@@ -3666,9 +3764,13 @@ class HarmonyCompanionEditor extends HTMLElement {
         const dic = document.createElement('ha-icon'); dic.setAttribute('icon', 'mdi:close');
         del.appendChild(dic);
         del.onclick = () => {
-            if (this._config.dynamic_slots) delete this._config.dynamic_slots[slotId];
+            this._edTransformHubField('dynamic_slots', (cur) => {
+                const next = { ...(cur || {}) };
+                delete next[slotId];
+                return next;
+            });
             this._slotCounts[prefix] = Math.max(0, idx - 1);
-            this._dispatch(); this._buildDOM();
+            this._buildDOM();
         };
         r1.appendChild(del);
         card.appendChild(r1);
@@ -3685,6 +3787,10 @@ class HarmonyCompanionEditor extends HTMLElement {
     // -------- SECTION: PHYSISCHE TASTEN --------
     _sectionButtons() {
         const { det, body } = this._details('sec-buttons', 'Physische Tastenbelegung');
+        const hub = this._edCurrentHub();
+
+        const banner = this._edHubBanner();
+        if (banner) body.appendChild(banner);
 
         // Kontext-Zeile: Auswahl + Auto-Befuellen-Button
         const ctxRow = document.createElement('div');
@@ -3710,7 +3816,7 @@ class HarmonyCompanionEditor extends HTMLElement {
 
         // Media-Entity + Camera-Entity fuer diese Aktivitaet (nur bei nicht-globalem Kontext)
         if (this._currentContext !== 'global') {
-            const mediaEntityId  = (this._config.activity_media  && this._config.activity_media[this._currentContext])  || '';
+            const mediaEntityId  = (hub.activity_media && hub.activity_media[this._currentContext]) || '';
             body.appendChild(this._labeled(
                 'Media-Entity fuer diese Aktivitaet (optional)',
                 this._haSelector(
@@ -3727,7 +3833,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         hint.textContent = 'Auto-befuellen: befuellt leere Felder mit dem ersten passenden Befehl aus der Conf. Bereits belegte Felder werden nicht ueberschrieben.';
         body.appendChild(hint);
 
-        const ctxButtons = (this._config.buttons && this._config.buttons[this._currentContext]) || {};
+        const ctxButtons = (hub.buttons && hub.buttons[this._currentContext]) || {};
         this._buttonIds.forEach((btnId) => {
             const r = document.createElement('div');
             r.className = 'btn-row';
@@ -3752,34 +3858,33 @@ class HarmonyCompanionEditor extends HTMLElement {
             return;
         }
         const devices = this._confData.Devices || {};
-        const next = JSON.parse(JSON.stringify(this._config));
-        if (!next.buttons) next.buttons = {};
-        if (!next.buttons[ctx]) next.buttons[ctx] = {};
-
         let filled = 0;
-        for (const btnId of this._buttonIds) {
-            if (next.buttons[ctx][btnId]) continue;          // nicht ueberschreiben
-            const fallbacks = HARMONY_FALLBACKS[btnId];
-            if (!fallbacks) continue;
-
-            let found = false;
-            for (let fi = 0; fi < fallbacks.length && !found; fi++) {
-                const candidate = fallbacks[fi];
-                for (const devName in devices) {
-                    const dev = devices[devName];
-                    if (!dev || !Array.isArray(dev.commands)) continue;
-                    if (dev.commands.indexOf(candidate) !== -1) {
-                        next.buttons[ctx][btnId] = 'command:::' + dev.id + ':::' + candidate;
-                        filled++;
-                        found = true;
-                        break;
+        this._edTransformHubField('buttons', (cur) => {
+            const next = { ...(cur || {}) };
+            if (!next[ctx]) next[ctx] = {};
+            const ctxBtns = { ...next[ctx] };
+            for (const btnId of this._buttonIds) {
+                if (ctxBtns[btnId]) continue;
+                const fallbacks = HARMONY_FALLBACKS[btnId];
+                if (!fallbacks) continue;
+                let found = false;
+                for (let fi = 0; fi < fallbacks.length && !found; fi++) {
+                    const candidate = fallbacks[fi];
+                    for (const devName in devices) {
+                        const dev = devices[devName];
+                        if (!dev || !Array.isArray(dev.commands)) continue;
+                        if (dev.commands.indexOf(candidate) !== -1) {
+                            ctxBtns[btnId] = 'command:::' + dev.id + ':::' + candidate;
+                            filled++;
+                            found = true;
+                            break;
+                        }
                     }
                 }
             }
-        }
-
-        this._config = next;
-        this._dispatch();
+            next[ctx] = ctxBtns;
+            return next;
+        });
         this._initialized = false;
         this._buildDOM();
         this._initialized = true;
@@ -3995,23 +4100,21 @@ class HarmonyCompanionEditor extends HTMLElement {
 
     // -------- PATCH / DISPATCH --------
     _patchActivityMedia(actName, entityId) {
-        const next = JSON.parse(JSON.stringify(this._config));
-        if (!next.activity_media) next.activity_media = {};
-        if (!entityId) delete next.activity_media[actName];
-        else next.activity_media[actName] = entityId;
-        if (Object.keys(next.activity_media).length === 0) delete next.activity_media;
-        this._config = next;
-        this._dispatch();
+        this._edTransformHubField('activity_media', (cur) => {
+            const next = { ...(cur || {}) };
+            if (entityId) next[actName] = entityId;
+            else delete next[actName];
+            return next;
+        });
     }
 
     _patchActivityCamera(actName, entityId) {
-        const next = JSON.parse(JSON.stringify(this._config));
-        if (!next.activity_camera) next.activity_camera = {};
-        if (!entityId) delete next.activity_camera[actName];
-        else next.activity_camera[actName] = entityId;
-        if (Object.keys(next.activity_camera).length === 0) delete next.activity_camera;
-        this._config = next;
-        this._dispatch();
+        this._edTransformHubField('activity_camera', (cur) => {
+            const next = { ...(cur || {}) };
+            if (entityId) next[actName] = entityId;
+            else delete next[actName];
+            return next;
+        });
     }
 
     _patchTop(key, value) {
@@ -4026,26 +4129,30 @@ class HarmonyCompanionEditor extends HTMLElement {
     }
 
     _patchSlot(slotId, field, value) {
-        const next = JSON.parse(JSON.stringify(this._config));
-        if (!next.dynamic_slots) next.dynamic_slots = {};
-        if (!next.dynamic_slots[slotId]) next.dynamic_slots[slotId] = {};
-        const slot = next.dynamic_slots[slotId];
-        if (value === '' || value === null || value === undefined) delete slot[field];
-        else slot[field] = value;
-        if (!slot.text && !slot.icon && !slot.action) delete next.dynamic_slots[slotId];
-        this._config = next; this._dispatch();
+        this._edTransformHubField('dynamic_slots', (cur) => {
+            const next = { ...(cur || {}) };
+            const slot = { ...(next[slotId] || {}) };
+            if (value === '' || value === null || value === undefined) delete slot[field];
+            else slot[field] = value;
+            if (!slot.text && !slot.icon && !slot.action) delete next[slotId];
+            else next[slotId] = slot;
+            return next;
+        });
     }
 
     _patchButton(ctx, btnId, value) {
-        const next = JSON.parse(JSON.stringify(this._config));
-        if (!next.buttons) next.buttons = {};
-        if (!next.buttons[ctx]) next.buttons[ctx] = {};
-        if (!value) delete next.buttons[ctx][btnId];
-        else next.buttons[ctx][btnId] = value;
-        if (ctx !== 'global' && next.buttons[ctx] && Object.keys(next.buttons[ctx]).length === 0) {
-            delete next.buttons[ctx];
-        }
-        this._config = next; this._dispatch();
+        this._edTransformHubField('buttons', (cur) => {
+            const next = { ...(cur || {}) };
+            const ctxBtns = { ...(next[ctx] || {}) };
+            if (!value) delete ctxBtns[btnId];
+            else ctxBtns[btnId] = value;
+            if (ctx !== 'global' && Object.keys(ctxBtns).length === 0) {
+                delete next[ctx];
+            } else {
+                next[ctx] = ctxBtns;
+            }
+            return next;
+        });
     }
 
     _dispatch() {
