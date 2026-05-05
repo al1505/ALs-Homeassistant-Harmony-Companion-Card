@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.4.2";
+const HC_VERSION = "5.4.3";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -1693,19 +1693,32 @@ class HarmonyCompanionCard extends HTMLElement {
         // Media-Layout: immer wenn Nicht-TV-Aktivitaet aktiv ist (auch ohne isPlaying —
         // z.B. Kodi an aber kein Film laeuft, damit Power/Menu an konfigurierten Positionen bleiben).
         const applyMediaLayout = !isTVAct && !!act && act !== 'PowerOff';
+        if (useTVLayout)           this._lastLayoutMode = 'tv';
+        else if (applyMediaLayout) this._lastLayoutMode = 'media';
+        // Immer ein Layout anwenden (Fallback 'media') — Canvas bekommt stets korrekte Groesse.
         const layoutMode = useTVLayout      ? 'tv'
                          : applyMediaLayout ? 'media'
-                         : null;  // PowerOff: kein Layout — Power-Button wird unten explizit ausgeblendet
+                         : this._lastLayoutMode || 'media';
         display.classList.toggle('tv-mode',    layoutMode === 'tv');
         display.classList.toggle('media-mode', layoutMode === 'media');
 
-        // Layout-Inline-Styles aus Config anwenden
-        if (layoutMode) this._applyDisplayLayout(display, layoutMode);
-        // Im Idle/PowerOff-Zustand Hintergrund-Panels/Linien entfernen (Display wirkt ausgeschaltet).
-        // _applyDisplayLayout hat sie ggf. wieder hinzugefuegt – hier explizit entfernen.
-        if (!isPlaying) display.querySelectorAll('.hc-panel,.hc-line').forEach(el => el.remove());
-        // PowerOff: Power-Button ausblenden (Geraet ist aus, Button nicht sinnvoll + verhindert Overlap mit Text).
-        if (!layoutMode && pwrEl) pwrEl.style.display = 'none';
+        // Layout immer anwenden — positioniert Power + Activity + Menu korrekt (auch im PowerOff)
+        this._applyDisplayLayout(display, layoutMode);
+        // Idle/PowerOff: Panels/Linien + Nicht-Kern-Elemente ausblenden
+        if (!isPlaying) {
+            display.querySelectorAll('.hc-panel,.hc-line').forEach(el => el.remove());
+            if (logoEl)  logoEl.style.display  = 'none';
+            if (chanEl)  chanEl.style.display  = 'none';
+            if (titleEl) titleEl.style.display = 'none';
+            if (timeEl)  timeEl.style.display  = 'none';
+            const spanEl2 = root.getElementById('display-timespan');
+            if (spanEl2) spanEl2.style.display = 'none';
+        }
+        // PowerOff: Dots/Menu ebenfalls ausblenden (kein Menue wenn Geraet aus)
+        if (!act || act === 'PowerOff') {
+            if (dotsEl) dotsEl.style.display = 'none';
+        }
+        // Power-Button + Activity: nie explizit versteckt — _applyDisplayLayout setzt Position aus Config
 
         // ---- Restzeit-Anzeige (1h 34m bis 21:35) ----
         // Quellen: OpenWebIF endStr ODER HA-Entity media_duration/_position
