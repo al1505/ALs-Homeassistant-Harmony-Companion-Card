@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.5.0";
+const HC_VERSION = "5.5.1";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2393,6 +2393,15 @@ class HarmonyCompanionEditor extends HTMLElement {
                         grid-template-columns: 130px 1fr;
                     }
                     .hc-edt ha-textfield, .hc-edt ha-selector { width: 100%; display: block; }
+                    .hc-edt .hc-text-input {
+                        width: 100%; height: 44px; padding: 4px 10px;
+                        border: 1px solid var(--divider-color, #888); border-radius: 4px;
+                        background: var(--input-fill-color, var(--card-background-color, #fff));
+                        color: var(--primary-text-color, #212121);
+                        font-size: 14px; font-family: inherit;
+                        box-sizing: border-box; outline: none;
+                    }
+                    .hc-edt .hc-text-input:focus { border-color: var(--primary-color, #03a9f4); }
                     .hc-edt .lbl { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 2px; font-weight: 500; }
                     .hc-edt .add-btn {
                         background: var(--primary-color); color: var(--text-primary-color, #fff);
@@ -2568,11 +2577,13 @@ class HarmonyCompanionEditor extends HTMLElement {
         const hub = hubs[idx] || {};
 
         // Name
-        const nameInp = document.createElement('ha-textfield');
-        nameInp.label = 'Hub-Name (Anzeigename)';
+        const nameInp = document.createElement('input');
+        nameInp.type = 'text';
+        nameInp.className = 'hc-text-input';
         nameInp.value = hub.name || '';
+        nameInp.placeholder = 'Hub-Name';
         nameInp.onchange = (e) => this._edPatchHub(idx, 'name', e.target.value);
-        body.appendChild(nameInp);
+        body.appendChild(this._labeled('Hub-Name (Anzeigename)', nameInp));
 
         // Entity
         body.appendChild(this._labeled('Harmony Hub Entitaet',
@@ -2581,13 +2592,13 @@ class HarmonyCompanionEditor extends HTMLElement {
         ));
 
         // Config-Datei
-        const cfg = document.createElement('ha-textfield');
-        cfg.label = 'Pfad zur Config-Datei';
-        cfg.helper = 'z.B. /local/harmony_12563120.conf';
-        cfg.helperPersistent = true;
+        const cfg = document.createElement('input');
+        cfg.type = 'text';
+        cfg.className = 'hc-text-input';
         cfg.value = hub.config_file || this._config.config_file || '';
+        cfg.placeholder = 'z.B. /local/harmony_12563120.conf';
         cfg.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
-        body.appendChild(cfg);
+        body.appendChild(this._labeled('Pfad zur Config-Datei', cfg));
 
         // Hub-Farbe (für Rahmen um per-Hub-Sections)
         const colorWrap = document.createElement('div');
@@ -3803,20 +3814,19 @@ class HarmonyCompanionEditor extends HTMLElement {
         // Grab-Bild Aktualisierungsintervall
         const grabIntRow = document.createElement('div');
         grabIntRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:8px;';
-        const grabIntField = document.createElement('ha-textfield');
-        grabIntField.type    = 'number';
-        grabIntField.label   = 'Hintergrundbild Refresh (Sekunden)';
-        grabIntField.helper  = 'Wie oft das Grab-Bild in der Karte aktualisiert wird (min. 5, Default 30)';
-        grabIntField.helperPersistent = true;
-        grabIntField.min     = '5';
-        grabIntField.step    = '5';
-        grabIntField.style.cssText = 'flex:1;';
-        grabIntField.value   = String(hub.epg_grab_interval || 30);
+        const grabIntField = document.createElement('input');
+        grabIntField.type = 'number';
+        grabIntField.className = 'hc-text-input';
+        grabIntField.min = '5';
+        grabIntField.step = '5';
+        grabIntField.value = String(hub.epg_grab_interval || 30);
         grabIntField.onchange = (e) => {
             const v = Math.max(5, parseInt(e.target.value, 10) || 30);
             this._edSetHubField('epg_grab_interval', v);
         };
-        grabIntRow.appendChild(grabIntField);
+        const grabIntWrap = this._labeled('Hintergrundbild Refresh (Sekunden)', grabIntField);
+        grabIntWrap.style.flex = '1';
+        grabIntRow.appendChild(grabIntWrap);
         body.appendChild(grabIntRow);
 
         // Aktivitaeten-Auswahl: Checkboxen fuer jede konfigurierte Aktivitaet
@@ -3917,10 +3927,12 @@ class HarmonyCompanionEditor extends HTMLElement {
         r1.appendChild(this._labeled('Icon (Slot ' + idx + ')',
             this._haSelector({ icon: {} }, slot.icon || '', (v) => this._patchSlot(slotId, 'icon', v || ''))
         ));
-        const txt = document.createElement('ha-textfield');
-        txt.label = 'Anzeigename'; txt.value = currentText; txt.style.width = '100%';
-        txt.onchange = (e) => this._patchSlot(slotId, 'text', e.target.value);
-        r1.appendChild(txt);
+        const txtInput = document.createElement('input');
+        txtInput.type = 'text';
+        txtInput.className = 'hc-text-input';
+        txtInput.value = currentText;
+        txtInput.onchange = (e) => this._patchSlot(slotId, 'text', e.target.value);
+        r1.appendChild(this._labeled('Anzeigename', txtInput));
 
         const del = document.createElement('button');
         del.type = 'button'; del.className = 'del-btn'; del.title = 'Slot entfernen';
