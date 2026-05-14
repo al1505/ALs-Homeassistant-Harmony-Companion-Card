@@ -11,7 +11,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.4.3";
+const HC_VERSION = "5.5.0";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -2259,6 +2259,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         this._currentContext = 'global';
         this._openedSections = new Set(['sec-hub']);
         this._slotCounts = { act: null, bot: null };
+        this._currentAutoDevice = '';
 
         this._buttonIds = [
             // DVR-Zone (jetzt in physischer Tastenbelegung)
@@ -2319,6 +2320,10 @@ class HarmonyCompanionEditor extends HTMLElement {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             this._confData = data;       // Rohdaten fuer Auto-Befuellen speichern
+            // Geraete-Filter zuruecksetzen wenn das ausgewaehlte Geraet in neuer Conf nicht existiert
+            if (this._currentAutoDevice && !(data.Devices && data.Devices[this._currentAutoDevice])) {
+                this._currentAutoDevice = '';
+            }
             this._cmdOptions = [];
             this._contextOptions = [{ label: 'Globale Standardbelegung', value: 'global' }];
             this._activitiesList = [];
@@ -2580,7 +2585,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         cfg.label = 'Pfad zur Config-Datei';
         cfg.helper = 'z.B. /local/harmony_12563120.conf';
         cfg.helperPersistent = true;
-        cfg.value = hub.config_file || '';
+        cfg.value = hub.config_file || this._config.config_file || '';
         cfg.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
         body.appendChild(cfg);
 
@@ -3913,7 +3918,7 @@ class HarmonyCompanionEditor extends HTMLElement {
             this._haSelector({ icon: {} }, slot.icon || '', (v) => this._patchSlot(slotId, 'icon', v || ''))
         ));
         const txt = document.createElement('ha-textfield');
-        txt.label = 'Text'; txt.value = currentText; txt.style.width = '100%';
+        txt.label = 'Anzeigename'; txt.value = currentText; txt.style.width = '100%';
         txt.onchange = (e) => this._patchSlot(slotId, 'text', e.target.value);
         r1.appendChild(txt);
 
@@ -3959,6 +3964,21 @@ class HarmonyCompanionEditor extends HTMLElement {
                 (v) => { this._currentContext = v || 'global'; this._buildDOM(); })
         ));
 
+        // Geraete-Selector: schraenkt Auto-Befuellen auf ein bestimmtes Geraet ein
+        if (this._confData && this._confData.Devices) {
+            const deviceNames = Object.keys(this._confData.Devices);
+            if (deviceNames.length > 0) {
+                const devOpts = deviceNames.map((n) => ({ label: n, value: n }));
+                const devWrap = this._labeled('Geraet (Auto-Befuellen)',
+                    this._nativeSelect(devOpts, this._currentAutoDevice, '-- Alle Geraete --',
+                        (v) => { this._currentAutoDevice = v || ''; this._buildDOM(); })
+                );
+                devWrap.style.flex = '1';
+                devWrap.style.minWidth = '160px';
+                ctxRow.appendChild(devWrap);
+            }
+        }
+
         const autoBtn = document.createElement('button');
         autoBtn.type = 'button';
         autoBtn.className = 'auto-btn';
@@ -3967,7 +3987,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         autoIc.setAttribute('icon', 'mdi:lightning-bolt');
         autoBtn.appendChild(autoIc);
         autoBtn.appendChild(document.createTextNode(' Auto-befuellen'));
-        autoBtn.onclick = () => this._applyAutoMapping(this._currentContext);
+        autoBtn.onclick = () => this._applyAutoMapping(this._currentContext, this._currentAutoDevice);
         ctxRow.appendChild(autoBtn);
 
         body.appendChild(ctxRow);
@@ -3988,7 +4008,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         // Hinweis
         const hint = document.createElement('div');
         hint.style.cssText = 'font-size:12px;color:var(--secondary-text-color);padding:4px 0 4px;';
-        hint.textContent = 'Auto-befuellen: befuellt leere Felder mit dem ersten passenden Befehl aus der Conf. Bereits belegte Felder werden nicht ueberschrieben.';
+        hint.textContent = 'Auto-befuellen: befuellt leere Felder mit dem ersten passenden Befehl. Geraet auswaehlen fuer kontext-bezogenes Befuellen. Bereits belegte Felder werden nicht ueberschrieben.';
         body.appendChild(hint);
 
         const ctxButtons = (hub.buttons && hub.buttons[this._currentContext]) || {};
@@ -4010,7 +4030,7 @@ class HarmonyCompanionEditor extends HTMLElement {
 
     // Auto-Befuellen: schreibt fuer den angegebenen Kontext alle leeren Button-Slots
     // mit dem ersten passenden Befehl aus der Harmony-Conf (via HARMONY_FALLBACKS).
-    _applyAutoMapping(ctx) {
+    _applyAutoMapping(ctx, filterDevName) {
         if (!this._confData) {
             console.warn('Harmony Auto-Mapping: keine Conf-Daten vorhanden.');
             return;
@@ -4029,6 +4049,7 @@ class HarmonyCompanionEditor extends HTMLElement {
                 for (let fi = 0; fi < fallbacks.length && !found; fi++) {
                     const candidate = fallbacks[fi];
                     for (const devName in devices) {
+                        if (filterDevName && devName !== filterDevName) continue;
                         const dev = devices[devName];
                         if (!dev || !Array.isArray(dev.commands)) continue;
                         if (dev.commands.indexOf(candidate) !== -1) {
