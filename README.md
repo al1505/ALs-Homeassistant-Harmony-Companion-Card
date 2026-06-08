@@ -12,6 +12,54 @@
 
 ---
 
+## 📱 Harmony Card V2 — Mobile-First (neu)
+
+**`harmony-card-v2.js`** — eigenständige, mobile-first Variante für Pixel / Smartphone, **parallel zu V1** (beide koexistieren, V1 bleibt unverändert).
+
+| Feature | V1 | V2 |
+|---|---|---|
+| Zielgerät | Desktop + Mobile | Mobile-first (Pixel 8 Pro) |
+| Touch-Targets | 32–38 px | Activity ≥48 px · D-Pad ≥60 px |
+| Device Quick Sheet | — | Gerät direkt steuern aus jeder Activity |
+| Visueller Editor | Drag-and-Drop | — (YAML-Config, selbes Schema) |
+| Multi-Hub | bis 5 | 1 Hub |
+| EPG / Display | Smoked-Glass | — |
+| Haptik | — | navigator.vibrate(30) |
+
+**Setup (manuell):**
+```yaml
+# In HA → Einstellungen → Dashboards → Ressourcen hinzufügen:
+# /local/community/harmony-companion-card/harmony-card-v2.js  (JavaScript Modul)
+```
+```yaml
+# In der Lovelace-View:
+type: custom:harmony-card-v2
+entity: remote.harmony_hub
+config_file: /local/harmony_12563120.conf   # selbe Conf wie V1
+buttons:
+  global:
+    vol_up:    "command:::LG Fernseher:::VolumeUp"
+    vol_down:  "command:::LG Fernseher:::VolumeDown"
+    mute:      "command:::LG Fernseher:::Mute"
+    dir_up:    "command:::LG Fernseher:::DirectionUp"
+    dir_down:  "command:::LG Fernseher:::DirectionDown"
+    dir_left:  "command:::LG Fernseher:::DirectionLeft"
+    dir_right: "command:::LG Fernseher:::DirectionRight"
+    ok:        "command:::LG Fernseher:::OK"
+    back:      "command:::LG Fernseher:::Back"
+    source:    "command:::LG Fernseher:::InputHdmi1"
+  Fernsehen:
+    ch_up:   "command:::LG Fernseher:::ChannelUp"
+    ch_down: "command:::LG Fernseher:::ChannelDown"
+  CODI:
+    play:  "command:::Apple TV 4K:::Play"
+    pause: "command:::Apple TV 4K:::Pause"
+```
+
+**Device Quick Sheet:** Tippe auf das Geräte-Symbol rechts in der Activity-Leiste → wähle ein Gerät → dessen konfigurierte Befehle erscheinen als Sheet. Ideal für TV-Source-Wechsel während einer anderen Activity aktiv ist.
+
+---
+
 ## ☕ Support
 
 Wenn dir diese Card gefällt und du die Weiterentwicklung unterstützen möchtest:
@@ -80,6 +128,36 @@ Editor mit Hub-Konfiguration aufgeklappt: Hub-Tabs in jeweiliger Farbe, Per-Hub-
 ![Layout-Editor](screenshots/05-editor-layout.png)
 
 Vollständiger Drag-and-Drop-Layout-Editor: Display-Offset-Inputs, Smoked-Glass-Farbe, Element-Palette (Power, Menü, Panel, Linie, Logo XL/L/M/S, Activity, Sender, Titel, Zeit, Beg-End), Drag-and-Drop-Raster mit positionierten Elementen, Panel-Property-Editor (Farbe / Transparenz / Eckradius), Text-Element-Editor (Schriftgröße / Schriftart / Farbe), Übernehmen/Zurücksetzen.
+</details>
+
+<details>
+<summary><b>⌨️ 6. Physische Tastenbelegung — pro Aktivität</b></summary>
+
+![Physische Tastenbelegung](screenshots/06-editor-physical-buttons-tv.png)
+
+Mapping zwischen den **physischen Buttons der Card** (DVR, Guide, Info, Farb-Tasten, Exit, Menü, OK-Pad, Volume/Channel, Numpad) und den **Befehlen, die der Harmony Hub sendet** — kontextabhängig je nach aktiver Aktivität.
+
+**Konfigurierbar:**
+- **Bearbeite Hub** — welcher Harmony Hub konfiguriert wird (Auswahl unter "Hub-Konfiguration")
+- **Kontext (Aktivität)** — Dropdown mit drei Modi:
+  - `Globale Standardbelegung` — Fallback wenn keine Aktivitäts-spezifische Belegung gesetzt ist
+  - `Aktion: Fernsehen` — Mapping speziell für TV-Aktivität
+  - `Aktion: Kodi` — Mapping speziell für Kodi (oder weitere Aktivitäten)
+- **Auto-befüllen** — füllt leere Felder mit passenden Befehlen aus der Card-Definition; bestehende Einträge bleiben unangetastet
+- **Media-Entity** *(optional)* — HA-Entity, deren Status im Display-Bereich angezeigt wird (z.B. der OpenWebIF-Player für TV-Stream/EPG)
+- **Pro physische Taste ein Dropdown** — wählt den Hub-Befehl aus der `.conf`-Datei (Format: `Befehl (Gerät)`, z.B. `Red (Vu+ DVR)` oder `Volume Up (Sony AVR)`)
+
+**Beispiel TV-Aktivität:**
+
+| Card-Taste | Befehl |
+|---|---|
+| Rot / Grün / Gelb / Blau | `Red`/`Green`/`Yellow`/`Blue` (Vu+ DVR) — EPG-Navigation, Untertitel |
+| DVR | `Record` (Vu+ DVR) |
+| Guide | `EPG` (Vu+ DVR) |
+| Info | `Info` (Vu+ DVR) |
+| Exit / Menü | `Exit` / `Menu` (Vu+ DVR) |
+
+**Pro-Aktivität-Override:** dieselbe rote Taste schickt bei `Fernsehen` z.B. `Red` an den Vu+, bei `Kodi` aber `Subtitles` an Kodi. Globale Standardbelegung gilt nur, wenn die aktive Aktivität kein eigenes Mapping definiert.
 </details>
 
 > 💡 **Eigene Screenshots beisteuern:** PR welcome — Bilder im Ordner `screenshots/` ablegen.
@@ -222,7 +300,7 @@ hubs:
 - **Center-anchored Coordinates**: keine Sprünge beim Verschieben über Display-Mittellinie
 - **Multi-Instance Pattern** (`panel_N`, `line_N`): dynamische DOM-Erstellung in `_applyDisplayLayout`
 
-Mehr Details: siehe [`HA-Dashboard Master-Blueprint v5.md`](../HA-Dashboard%20Master-Blueprint%20v5.md) und [`LESSONS_LEARNED.md`](../LESSONS_LEARNED.md) im Workspace.
+Mehr Details: siehe [`HA-ARCHITECTURE.md`](../HA-ARCHITECTURE.md) (strikte Mandate), [`HA-COOKBOOK.md`](../HA-COOKBOOK.md) (Setup-Rezepte) und [`HA-RETROSPECTIVE.md`](../HA-RETROSPECTIVE.md) (Lessons Learned) im Workspace.
 
 ---
 
