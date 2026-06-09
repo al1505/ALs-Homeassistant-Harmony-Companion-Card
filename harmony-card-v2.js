@@ -93,6 +93,7 @@ class HarmonyCardV2 extends HTMLElement {
         this._lastAct    = null;
         this._rendered   = false;
         this._numOpen    = false;
+        this._playing    = false;  // play/pause toggle state
         this._sheetMode  = null;   // null | 'devices' | 'commands'
         this._sheetDev   = null;
     }
@@ -105,6 +106,10 @@ class HarmonyCardV2 extends HTMLElement {
             buttons: { global: {} },
             dynamic_slots: {}
         };
+    }
+
+    static getConfigElement() {
+        return document.createElement('harmony-card-v2-editor');
     }
 
     setConfig(cfg) {
@@ -120,6 +125,7 @@ class HarmonyCardV2 extends HTMLElement {
         const act = (st && st.attributes && st.attributes.current_activity) || null;
         if (act !== this._lastAct) {
             this._lastAct = act;
+            this._playing = false; // reset play/pause on activity change
             if (this._rendered) this._updateLive();
         }
     }
@@ -174,12 +180,14 @@ class HarmonyCardV2 extends HTMLElement {
     }
 
     _devices() {
-        return Object.values(this._conf.Devices || {});
+        return Object.keys(this._conf.Devices || {});
     }
 
     // All configured buttons across all activities targeting a specific device
     _btnsForDevice(devName) {
         if (!this.config || !this.config.buttons) return [];
+        const devObj = (this._conf.Devices || {})[devName];
+        const devId  = devObj ? String(devObj.id) : null;
         const seen = new Set();
         const out  = [];
         const scan = (map) => {
@@ -187,7 +195,7 @@ class HarmonyCardV2 extends HTMLElement {
                 if (seen.has(btnId) || typeof val !== 'string') continue;
                 if (val.startsWith('command:::')) {
                     const p = val.split(':::');
-                    if (p[1] === devName) {
+                    if (devId && p[1] === devId) {
                         seen.add(btnId);
                         out.push({ btnId, cmd: p[2], val });
                     }
@@ -214,6 +222,14 @@ class HarmonyCardV2 extends HTMLElement {
     // ── Render ───────────────────────────────────────────────────────────────
 
     _render() {
+        const skin = this.config && this.config.skin;
+        if (skin === 'fire-tv')    { this._renderFireTv();    return; }
+        if (skin === 'apple-tv')   { this._renderAppleTv();   return; }
+        if (skin === 'chromecast') { this._renderChromecast(); return; }
+        if (skin === 'roku')       { this._renderRoku();       return; }
+        if (skin === 'nvidia')     { this._renderNvidia();     return; }
+        if (skin === 'jvc')        { this._renderJvc();        return; }
+        if (skin === 'onn')        { this._renderOnn();        return; }
         const acts    = this._activities();
         const current = this._lastAct || 'PowerOff';
 
@@ -226,16 +242,18 @@ class HarmonyCardV2 extends HTMLElement {
         }).join('');
 
         this.shadowRoot.innerHTML = this._css() + `
-<div class="card" id="hcv2-card">
+<div class="card">
+<div class="flt-remote" id="hcv2-card">
 
-  <!-- Activity bar -->
-  <div class="act-bar">
-    <div class="act-scroll" id="hcv2-pills">${pillsHtml || '<span class="pill-empty">Config laden…</span>'}</div>
-    <button class="icon-btn dev-fab" id="hcv2-devbtn" title="Gerät direkt steuern">${_svg('devices',22)}</button>
+  <!-- Topbar: power · status · devices -->
+  <div class="flt-top">
+    <button class="flt-circ flt-pwr" data-btn="off">${_svg('power',20)}</button>
+    <div class="flt-st" id="hcv2-status"></div>
+    <button class="flt-circ" id="hcv2-devbtn">${_svg('devices',20)}</button>
   </div>
 
-  <!-- Status -->
-  <div class="status-row" id="hcv2-status"></div>
+  <!-- Activity pills -->
+  <div class="act-scroll" id="hcv2-pills">${pillsHtml || '<span class="pill-empty">Config laden…</span>'}</div>
 
   ${this._conf._err ? `<div class="conf-err">Conf-Fehler: ${_e(this._conf._err)}</div>` : ''}
 
@@ -256,14 +274,10 @@ class HarmonyCardV2 extends HTMLElement {
 
   <!-- D-Pad area -->
   <div class="dpad-area">
-
-    <!-- Exit / Menu row (contextual) -->
     <div class="fn-row" id="hcv2-exitmenu">
       <button class="fn-btn" data-btn="exit">${_svg('exit',22)}<span>Exit</span></button>
       <button class="fn-btn" data-btn="menu">${_svg('menu',22)}<span>Menu</span></button>
     </div>
-
-    <!-- D-Pad -->
     <div class="dpad">
       <div class="dp-top"><button class="dp-btn" data-btn="dir_up">${_svg('dir_up',28)}</button></div>
       <div class="dp-mid">
@@ -273,8 +287,6 @@ class HarmonyCardV2 extends HTMLElement {
       </div>
       <div class="dp-bot"><button class="dp-btn" data-btn="dir_down">${_svg('dir_down',28)}</button></div>
     </div>
-
-    <!-- Back / Info row -->
     <div class="fn-row">
       <button class="fn-btn" data-btn="back">${_svg('back',22)}<span>Back</span></button>
       <button class="fn-btn" data-btn="info">${_svg('info',22)}<span>Info</span></button>
@@ -289,20 +301,18 @@ class HarmonyCardV2 extends HTMLElement {
     <button class="color-btn c-blue"   data-btn="blue"></button>
   </div>
 
-  <!-- Transport row 1 (contextual) -->
-  <div class="tp-row" id="hcv2-t1">
-    <button class="tp-btn" data-btn="skip_back">${_svg('skip_back',22)}</button>
-    <button class="tp-btn" data-btn="rewind">${_svg('rewind',22)}</button>
-    <button class="tp-btn tp-play" data-btn="play">${_svg('play',28)}</button>
-    <button class="tp-btn" data-btn="fast_forward">${_svg('fwd',22)}</button>
-    <button class="tp-btn" data-btn="skip_forward">${_svg('skip_fwd',22)}</button>
-  </div>
-
-  <!-- Transport row 2: Rec/Pause/Stop (contextual) -->
-  <div class="tp-row" id="hcv2-t2">
-    <button class="tp-btn" data-btn="record">${_svg('record',22)}</button>
-    <button class="tp-btn" data-btn="pause">${_svg('pause',22)}</button>
-    <button class="tp-btn" data-btn="stop">${_svg('stop',22)}</button>
+  <!-- Transport: 3×2 grid, play/pause toggle (contextual) -->
+  <div id="hcv2-t1">
+    <div class="tp-row">
+      <button class="tp-btn" data-btn="skip_back">${_svg('skip_back',22)}</button>
+      <button class="tp-btn tp-play" id="hcv2-pp" data-btn="play">${_svg('play',28)}</button>
+      <button class="tp-btn" data-btn="skip_forward">${_svg('skip_fwd',22)}</button>
+    </div>
+    <div class="tp-row">
+      <button class="tp-btn" data-btn="rewind">${_svg('rewind',22)}</button>
+      <button class="tp-btn tp-stop" data-btn="stop">${_svg('stop',22)}</button>
+      <button class="tp-btn" data-btn="fast_forward">${_svg('fwd',22)}</button>
+    </div>
   </div>
 
   <!-- Numpad (contextual, collapsible) -->
@@ -318,6 +328,7 @@ class HarmonyCardV2 extends HTMLElement {
     </div>
   </div>
 
+</div><!-- /flt-remote -->
 </div><!-- /card -->
 
 <!-- Device Quick Sheet -->
@@ -339,34 +350,47 @@ class HarmonyCardV2 extends HTMLElement {
     }
 
     _updateLive() {
-        const root    = this.shadowRoot;
+        const root       = this.shadowRoot;
         if (!root) return;
-        const current = this._lastAct || 'PowerOff';
-        const isOn    = current && current !== 'PowerOff';
+        const current    = this._lastAct || 'PowerOff';
+        const isOn       = current && current !== 'PowerOff';
+        const activeSkin = this.config && this.config.skin;
 
-        // Activity pills
-        root.querySelectorAll('.pill[data-act]').forEach(el => {
-            el.classList.toggle('pill--on', el.dataset.act === current);
+        // Activity pills (flat: .pill; fire-tv: .ftv-app; all others: .act-pill)
+        root.querySelectorAll('[data-act]').forEach(el => {
+            const on = el.dataset.act === current;
+            el.classList.toggle('pill--on', on);
+            el.classList.toggle('ftv-app--on', on);
+            el.classList.toggle('act-pill--on', on);
         });
 
         // Status row
         const sr = root.getElementById('hcv2-status');
         if (sr) {
-            sr.innerHTML = `
+            if (activeSkin && activeSkin !== 'flat') {
+                sr.textContent = isOn ? current : '';
+            } else {
+                sr.innerHTML = `
               <div class="st-dot ${isOn ? 'dot-on' : 'dot-off'}"></div>
-              <span class="st-txt">${_e(isOn ? current + ' · aktiv' : 'Kein Gerät aktiv')}</span>
-              ${isOn ? `<button class="pwr-btn icon-btn" data-btn="off" title="Ausschalten">${_svg('power',18)}</button>` : ''}
+              <span class="st-txt">${_e(isOn ? current : 'Kein Gerät aktiv')}</span>
             `;
+            }
         }
 
-        // Zone visibility
-        const vis = (id, on) => { const el = root.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
-        vis('hcv2-volch',    this._zoneOn(['vol_up','vol_down','mute','ch_up','ch_down']));
-        vis('hcv2-exitmenu', this._zoneOn(['exit','menu']));
-        vis('hcv2-color',    this._zoneOn(['red','green','yellow','blue']));
-        vis('hcv2-t1',       this._zoneOn(['skip_back','rewind','play','fast_forward','skip_forward']));
-        vis('hcv2-t2',       this._zoneOn(['record','pause','stop']));
-        vis('hcv2-num',      this._zoneOn(['num_1','num_2','num_3','num_4','num_5','num_6','num_7','num_8','num_9','num_0','num_minus','num_enter']));
+        // Reset play/pause button icon on activity change
+        const pp = root.getElementById('hcv2-pp');
+        if (pp) pp.innerHTML = _svg(this._playing ? 'pause' : 'play', 28);
+
+        // Zone visibility — flat skin only (non-flat skins manage their own visibility)
+        const flatSkin = !activeSkin || activeSkin === 'flat';
+        if (flatSkin) {
+            const vis = (id, on) => { const el = root.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+            vis('hcv2-volch',    this._zoneOn(['vol_up','vol_down','mute','ch_up','ch_down']));
+            vis('hcv2-exitmenu', this._zoneOn(['exit','menu']));
+            vis('hcv2-color',    this._zoneOn(['red','green','yellow','blue']));
+            vis('hcv2-t1',       this._zoneOn(['skip_back','rewind','play','pause','stop','fast_forward','skip_forward']));
+            vis('hcv2-num',      this._zoneOn(['num_1','num_2','num_3','num_4','num_5','num_6','num_7','num_8','num_9','num_0','num_minus','num_enter']));
+        }
     }
 
     // ── Events ───────────────────────────────────────────────────────────────
@@ -393,7 +417,7 @@ class HarmonyCardV2 extends HTMLElement {
 
         // Activity pills
         root.getElementById('hcv2-pills').addEventListener('click', e => {
-            const pill = e.target.closest('.pill[data-act]');
+            const pill = e.target.closest('[data-act]');
             if (!pill || !this._hass || !this.config) return;
             this._vib();
             this._hass.callService('remote', 'turn_on', {
@@ -410,12 +434,24 @@ class HarmonyCardV2 extends HTMLElement {
         root.getElementById('hcv2-sh-back').addEventListener('click',  () => this._sheetBack());
         root.getElementById('hcv2-bd').addEventListener('click',       () => this._sheetClose());
 
-        // Numpad toggle
-        root.getElementById('hcv2-numtgl').addEventListener('click', () => {
+        // Play/pause toggle (flat skin)
+        root.getElementById('hcv2-pp')?.addEventListener('click', e => {
+            e.stopPropagation();
+            this._vib();
+            const cmd = this._playing ? 'pause' : 'play';
+            this._doCmd(cmd);
+            this._playing = !this._playing;
+            e.currentTarget.innerHTML = _svg(this._playing ? 'pause' : 'play', 28);
+        });
+
+        // Numpad toggle (flat skin: hcv2-chev; all skins: hcv2-numgrid + .open class on button)
+        root.getElementById('hcv2-numtgl')?.addEventListener('click', e => {
             this._vib();
             this._numOpen = !this._numOpen;
-            root.getElementById('hcv2-numgrid').classList.toggle('open', this._numOpen);
-            root.getElementById('hcv2-chev').style.transform = this._numOpen ? 'rotate(180deg)' : '';
+            root.getElementById('hcv2-numgrid')?.classList.toggle('open', this._numOpen);
+            const chev = root.getElementById('hcv2-chev');
+            if (chev) chev.style.transform = this._numOpen ? 'rotate(180deg)' : '';
+            e.currentTarget.classList.toggle('open', this._numOpen);
         });
     }
 
@@ -535,6 +571,244 @@ class HarmonyCardV2 extends HTMLElement {
 
     _vib() { try { navigator.vibrate && navigator.vibrate(30); } catch(e) {} }
 
+    // ── Fire-TV Skin ──────────────────────────────────────────────────────────
+
+    _renderFireTv() {
+        const acts    = this._activities();
+        const current = this._lastAct || 'PowerOff';
+
+        const appsHtml = acts.map(a => {
+            const ico = a.icon
+                ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>`
+                : '';
+            return `<div class="ftv-app" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+
+        this.shadowRoot.innerHTML = this._cssFireTv() + `
+<div class="card">
+<div class="ftv-remote" id="hcv2-card">
+
+  <div class="ftv-topbar">
+    <button class="ftv-circ" data-btn="off" title="Power">${_svg('power',20)}</button>
+    <span class="ftv-status" id="hcv2-status"></span>
+    <button class="ftv-circ" id="hcv2-devbtn" title="Gerät wählen">${_svg('devices',20)}</button>
+  </div>
+
+  <div class="ftv-kb-row">
+    <button class="ftv-kb" data-btn="source">${_svg('source',24)}</button>
+  </div>
+
+  <div class="ftv-ring-wrap">
+    <div class="ftv-ring-outer">
+      <button class="ftv-dir" data-btn="dir_up">${_svg('dir_up',28)}</button>
+      <div class="ftv-ring-mid">
+        <button class="ftv-dir" data-btn="dir_left">${_svg('dir_left',28)}</button>
+        <button class="ftv-ok" data-btn="ok">OK</button>
+        <button class="ftv-dir" data-btn="dir_right">${_svg('dir_right',28)}</button>
+      </div>
+      <button class="ftv-dir" data-btn="dir_down">${_svg('dir_down',28)}</button>
+    </div>
+  </div>
+
+  <div class="ftv-row3">
+    <button class="ftv-rnd" data-btn="back">${_svg('back',22)}<span>Back</span></button>
+    <button class="ftv-rnd" data-btn="exit">${_svg('exit',22)}<span>Home</span></button>
+    <button class="ftv-rnd" data-btn="menu">${_svg('menu',22)}<span>Menu</span></button>
+  </div>
+
+  <div class="ftv-row3">
+    <button class="ftv-rnd" data-btn="rewind">${_svg('rewind',22)}</button>
+    <button class="ftv-rnd ftv-play" data-btn="play">${_svg('play',28)}</button>
+    <button class="ftv-rnd" data-btn="fast_forward">${_svg('fwd',22)}</button>
+  </div>
+
+  <div class="ftv-volch" id="hcv2-volch">
+    <div class="ftv-rockerv">
+      <button class="ftv-rb" data-btn="vol_up">${_svg('vol_up',18)}</button>
+      <span class="ftv-rklbl">VOL</span>
+      <button class="ftv-rb" data-btn="vol_down">${_svg('vol_down',18)}</button>
+    </div>
+    <button class="ftv-circ ftv-circ--mid" data-btn="mute">${_svg('mute',22)}</button>
+    <div class="ftv-rockerv">
+      <button class="ftv-rb" data-btn="ch_up">${_svg('dir_up',18)}</button>
+      <span class="ftv-rklbl">CH</span>
+      <button class="ftv-rb" data-btn="ch_down">${_svg('dir_down',18)}</button>
+    </div>
+  </div>
+
+  <div class="ftv-row3">
+    <button class="ftv-rnd" data-btn="skip_back">${_svg('skip_back',22)}</button>
+    <button class="ftv-rnd" data-btn="info">${_svg('info',22)}<span>Info</span></button>
+    <button class="ftv-rnd" data-btn="skip_forward">${_svg('skip_fwd',22)}</button>
+  </div>
+
+  <div class="ftv-apps" id="hcv2-pills">
+    ${appsHtml || '<span class="ftv-noapps">Keine Activities</span>'}
+  </div>
+
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf-Fehler: ${_e(this._conf._err)}</div>` : ''}
+
+</div>
+</div>
+
+<div class="sh-overlay" id="hcv2-sheet">
+  <div class="sh-backdrop" id="hcv2-bd"></div>
+  <div class="sh-panel">
+    <div class="sh-handle"></div>
+    <div class="sh-head">
+      <button class="sh-nav" id="hcv2-sh-back" style="visibility:hidden">${_svg('chev_left',22)}</button>
+      <span class="sh-title" id="hcv2-sh-title">Gerät wählen</span>
+      <button class="sh-nav" id="hcv2-sh-close">${_svg('close',22)}</button>
+    </div>
+    <div class="sh-body" id="hcv2-sh-body"></div>
+  </div>
+</div>
+`;
+        this._bindEvents();
+        this._updateLive();
+    }
+
+    _cssFireTv() { return `<style>
+:host{display:block;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;}
+
+.card{background:transparent;padding:8px;}
+
+.ftv-remote{
+  background:linear-gradient(180deg,#242428 0%,#1c1c20 100%);
+  border-radius:52px;
+  padding:22px 16px 26px;
+  max-width:284px;
+  margin:0 auto;
+  display:flex;flex-direction:column;align-items:center;gap:14px;
+  box-shadow:0 8px 32px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.ftv-topbar{
+  width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 4px;
+}
+.ftv-circ{
+  width:42px;height:42px;border-radius:50%;
+  background:rgba(255,255,255,.06);
+  display:flex;align-items:center;justify-content:center;
+  color:#9090a0;transition:background .12s;
+}
+.ftv-circ:active{background:rgba(255,255,255,.13);}
+.ftv-circ--mid{width:52px;height:52px;background:#2a2a30;}
+.ftv-status{flex:1;text-align:center;font-size:11px;font-weight:700;color:#606070;letter-spacing:.4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 6px;}
+
+.ftv-kb-row{display:flex;justify-content:center;}
+.ftv-kb{
+  width:56px;height:56px;border-radius:50%;
+  background:radial-gradient(circle at 40% 35%,#1ab3a8,#0d6e66);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;
+  box-shadow:0 4px 18px rgba(13,148,136,.40);
+  transition:opacity .12s;
+}
+.ftv-kb:active{opacity:.75;}
+
+.ftv-ring-wrap{display:flex;justify-content:center;}
+.ftv-ring-outer{
+  width:226px;height:226px;border-radius:50%;
+  background:radial-gradient(circle,#2e2e34 60%,#252528 100%);
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);
+  display:grid;grid-template-rows:1fr auto 1fr;
+  align-items:center;justify-items:center;
+}
+.ftv-ring-mid{
+  display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 8px;
+}
+.ftv-dir{
+  width:62px;height:62px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  color:#c0c0d0;transition:background .1s;
+}
+.ftv-dir:active{background:rgba(255,255,255,.10);}
+.ftv-ok{
+  flex:1;height:96px;border-radius:22px;
+  background:linear-gradient(180deg,#3a3a42 0%,#2e2e36 100%);
+  color:#e8e8f2;font-size:18px;font-weight:900;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 2px 6px rgba(0,0,0,.3);
+  transition:background .1s;margin:0 6px;
+}
+.ftv-ok:active{background:linear-gradient(180deg,#46464f 0%,#3a3a42 100%);}
+
+.ftv-row3{
+  display:flex;gap:8px;justify-content:center;width:100%;
+}
+.ftv-rnd{
+  flex:1;height:54px;border-radius:18px;
+  background:rgba(255,255,255,.055);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  color:#a0a0b0;font-size:9px;font-weight:700;letter-spacing:.3px;
+  transition:background .12s;
+}
+.ftv-rnd:active{background:rgba(255,255,255,.11);}
+.ftv-rnd span{font-size:9px;margin-top:1px;}
+.ftv-play{background:rgba(59,130,246,.12);color:#60a5fa;}
+.ftv-play:active{background:rgba(59,130,246,.20);}
+
+.ftv-volch{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;}
+.ftv-rockerv{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  background:rgba(255,255,255,.055);border-radius:22px;overflow:hidden;
+}
+.ftv-rb{
+  width:100%;height:42px;
+  display:flex;align-items:center;justify-content:center;
+  color:#b0b0c0;transition:background .1s;
+}
+.ftv-rb:active{background:rgba(255,255,255,.10);}
+.ftv-rklbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#505060;line-height:1;padding:2px 0;}
+
+.ftv-apps{
+  display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:4px;
+}
+.ftv-app{
+  height:36px;padding:0 14px;border-radius:18px;
+  display:flex;align-items:center;
+  font-size:12px;font-weight:700;white-space:nowrap;
+  cursor:pointer;user-select:none;
+  background:rgba(255,255,255,.07);color:#7070808;
+  color:#808090;
+  transition:all .15s;
+}
+.ftv-app--on{
+  background:var(--primary-color,#03a9f4);color:#fff;
+  box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#03a9f4) 40%,transparent);
+}
+.ftv-app:active{opacity:.75;}
+.ftv-noapps{font-size:11px;color:#404050;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+
+.sh-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;pointer-events:none;}
+.sh-overlay.open{pointer-events:all;}
+.sh-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s;}
+.sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.45);}
+.sh-panel{position:relative;width:100%;max-height:72vh;background:var(--ha-card-background,var(--card-background-color,#1e1e24));border-radius:24px 24px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+.sh-overlay.open .sh-panel{transform:translateY(0);}
+.sh-handle{width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);align-self:center;margin:10px 0 0;flex-shrink:0;}
+.sh-head{display:flex;align-items:center;padding:8px 8px 12px;gap:4px;flex-shrink:0;}
+.sh-title{flex:1;text-align:center;font-size:15px;font-weight:800;color:var(--primary-text-color,#e0e0e8);}
+.sh-nav{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;color:#707080;transition:background .12s;}
+.sh-nav:active{background:rgba(255,255,255,.08);}
+.sh-body{overflow-y:auto;padding:0 12px 20px;flex:1;}
+.sh-empty{padding:28px 0;text-align:center;color:#707080;font-size:13px;line-height:1.6;}
+.sh-empty small{font-size:11px;}
+.sh-empty code{background:rgba(255,255,255,.07);border-radius:4px;padding:1px 4px;}
+.dev-row{display:flex;align-items:center;gap:12px;padding:15px 8px;border-radius:14px;cursor:pointer;transition:background .12s;}
+.dev-row:active{background:rgba(255,255,255,.07);}
+.dev-name{flex:1;font-size:15px;font-weight:700;color:var(--primary-text-color,#e0e0e8);}
+.cmd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:4px 0;}
+.cmd-btn{min-height:64px;border-radius:16px;background:rgba(255,255,255,.06);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:#c0c0d0;transition:background .12s;overflow:hidden;padding:6px 4px;}
+.cmd-btn:active{background:rgba(255,255,255,.12);}
+.cmd-btn span{max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+${this._numpadCss()}</style>`; }
+
     // ── CSS ───────────────────────────────────────────────────────────────────
 
     _css() { return `<style>
@@ -542,153 +816,86 @@ class HarmonyCardV2 extends HTMLElement {
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;}
 
-/* Card shell */
-.card{
-  background:var(--ha-card-background,var(--card-background-color,#fff));
-  border-radius:var(--ha-card-border-radius,12px);
-  padding:12px 10px 18px;
-  display:flex;flex-direction:column;gap:10px;
+/* Outer card — thin wrapper */
+.card{background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:var(--ha-card-border-radius,12px);padding:8px;}
+
+/* Remote body — physical frame */
+.flt-remote{
+  background:var(--secondary-background-color,#f0f0f2);
+  border-radius:28px;
+  max-width:272px;margin:0 auto;
+  padding:16px 14px 22px;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.10)),inset 0 1px 0 rgba(255,255,255,.4);
 }
 
-/* Activity bar */
-.act-bar{display:flex;align-items:center;gap:8px;}
-.act-scroll{
-  flex:1;display:flex;gap:6px;
-  overflow-x:auto;scrollbar-width:none;
-  padding:2px 0;
-}
+/* Topbar */
+.flt-top{width:100%;display:flex;align-items:center;justify-content:space-between;}
+.flt-circ{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.06);display:flex;align-items:center;justify-content:center;color:var(--secondary-text-color,#666);transition:background .12s;}
+.flt-circ:active{background:rgba(0,0,0,.14);}
+.flt-pwr{color:#ef4444;}
+.flt-st{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;}
+
+/* Activity pills */
+.act-scroll{width:100%;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0;}
 .act-scroll::-webkit-scrollbar{display:none;}
-.pill{
-  flex-shrink:0;height:48px;padding:0 16px;
-  border-radius:24px;
-  display:flex;align-items:center;
-  font-size:13px;font-weight:700;white-space:nowrap;
-  cursor:pointer;user-select:none;
-  background:rgba(0,0,0,.05);
-  color:var(--secondary-text-color,#666);
-  transition:all .15s;
-}
-.pill--on{
-  background:var(--primary-color,#03a9f4);
-  color:#fff;
-  box-shadow:0 3px 10px color-mix(in srgb,var(--primary-color,#03a9f4) 35%,transparent);
-}
+.pill{flex-shrink:0;height:36px;padding:0 14px;border-radius:18px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(0,0,0,.06);color:var(--secondary-text-color,#666);transition:all .15s;}
+.pill--on{background:var(--primary-color,#03a9f4);color:#fff;box-shadow:0 2px 8px color-mix(in srgb,var(--primary-color,#03a9f4) 35%,transparent);}
 .pill:active{opacity:.75;}
 .pill-empty{font-size:12px;color:var(--secondary-text-color,#999);padding:0 4px;}
-.icon-btn{
-  width:48px;height:48px;border-radius:14px;
-  background:rgba(0,0,0,.05);
-  display:flex;align-items:center;justify-content:center;
-  color:var(--secondary-text-color,#666);
-  transition:background .12s;
-}
-.icon-btn:active{background:rgba(0,0,0,.12);}
-.dev-fab{flex-shrink:0;}
 
 /* Status */
-.status-row{display:flex;align-items:center;gap:8px;padding:0 4px;min-height:36px;}
 .st-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .dot-on{background:#22c55e;animation:hcv2p 2s ease infinite;}
 .dot-off{background:#94a3b8;}
 @keyframes hcv2p{0%,100%{opacity:1}50%{opacity:.3}}
-.st-txt{font-size:13px;font-weight:600;color:var(--secondary-text-color,#666);flex:1;}
-.pwr-btn{
-  width:36px;height:36px;border-radius:10px;
-  background:rgba(239,68,68,.08);color:#ef4444;
-  display:flex;align-items:center;justify-content:center;
-  transition:background .12s;
-}
-.pwr-btn:active{background:rgba(239,68,68,.18);}
+.st-txt{font-size:11px;font-weight:600;color:var(--secondary-text-color,#666);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;}
 .conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
 
 /* Vol/CH */
-.volch{display:flex;align-items:center;justify-content:center;gap:14px;}
-.rocker-v{
-  display:flex;flex-direction:column;align-items:center;
-  background:rgba(0,0,0,.04);border-radius:20px;overflow:hidden;width:72px;
-}
-.rb{
-  width:72px;height:44px;display:flex;align-items:center;justify-content:center;
-  color:var(--primary-text-color,#333);transition:background .1s;
-}
-.rb-top{border-radius:20px 20px 0 0;}
-.rb-bot{border-radius:0 0 20px 20px;}
+.volch{display:flex;align-items:center;justify-content:center;gap:10px;}
+.rocker-v{display:flex;flex-direction:column;align-items:center;background:rgba(0,0,0,.05);border-radius:20px;overflow:hidden;width:68px;}
+.rb{width:68px;height:42px;display:flex;align-items:center;justify-content:center;color:var(--primary-text-color,#333);transition:background .1s;}
+.rb-top{border-radius:20px 20px 0 0;}.rb-bot{border-radius:0 0 20px 20px;}
 .rb:active{background:rgba(0,0,0,.10);}
-.rk-lbl{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--secondary-text-color,#888);padding:1px 0;line-height:1;}
-.fn-btn{
-  width:64px;height:64px;border-radius:18px;
-  background:rgba(0,0,0,.04);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  color:var(--primary-text-color,#333);
-  font-size:10px;font-weight:700;
-  transition:background .12s;
-}
+.rk-lbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--secondary-text-color,#888);padding:1px 0;line-height:1;}
+.fn-btn{width:60px;height:60px;border-radius:18px;background:rgba(0,0,0,.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--primary-text-color,#333);font-size:9px;font-weight:700;transition:background .12s;}
 .fn-btn:active{background:rgba(0,0,0,.10);}
 
 /* D-Pad */
 .dpad-area{display:flex;flex-direction:column;align-items:center;gap:8px;}
-.fn-row{display:flex;gap:12px;justify-content:center;}
-.dpad{
-  display:flex;flex-direction:column;align-items:center;gap:2px;
-  background:rgba(0,0,0,.03);border-radius:26px;padding:8px;width:210px;
-}
+.fn-row{display:flex;gap:10px;justify-content:center;}
+.dpad{display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(0,0,0,.04);border-radius:26px;padding:8px;width:206px;}
 .dp-top,.dp-bot{display:flex;justify-content:center;width:100%;}
 .dp-mid{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;}
-.dp-btn{
-  width:60px;height:60px;border-radius:16px;
-  display:flex;align-items:center;justify-content:center;
-  color:var(--primary-text-color,#333);
-  transition:background .1s;
-}
+.dp-btn{width:58px;height:58px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--primary-text-color,#333);transition:background .1s;}
 .dp-btn:active{background:rgba(0,0,0,.10);}
-.dp-ok{
-  width:74px;height:60px;border-radius:20px;
-  background:var(--primary-color,#03a9f4);color:#fff;
-  font-size:17px;font-weight:900;
-  box-shadow:0 3px 12px color-mix(in srgb,var(--primary-color,#03a9f4) 30%,transparent);
-  transition:opacity .1s;
-}
+.dp-ok{width:70px;height:58px;border-radius:20px;background:var(--primary-color,#03a9f4);color:#fff;font-size:16px;font-weight:900;box-shadow:0 3px 10px color-mix(in srgb,var(--primary-color,#03a9f4) 30%,transparent);transition:opacity .1s;}
 .dp-ok:active{opacity:.8;}
 
 /* Color row */
 .color-row{display:flex;gap:8px;justify-content:center;}
-.color-btn{width:54px;height:30px;border-radius:9px;transition:opacity .1s;}
+.color-btn{width:52px;height:28px;border-radius:8px;transition:opacity .1s;}
 .color-btn:active{opacity:.75;}
-.c-red{background:#ef4444;} .c-green{background:#22c55e;} .c-yellow{background:#eab308;} .c-blue{background:#3b82f6;}
+.c-red{background:#ef4444;}.c-green{background:#22c55e;}.c-yellow{background:#eab308;}.c-blue{background:#3b82f6;}
 
-/* Transport */
+/* Transport 3×2 */
+#hcv2-t1{display:flex;flex-direction:column;gap:6px;width:100%;}
 .tp-row{display:flex;gap:6px;justify-content:center;}
-.tp-btn{
-  width:58px;height:54px;border-radius:16px;
-  background:rgba(0,0,0,.04);
-  display:flex;align-items:center;justify-content:center;
-  color:var(--primary-text-color,#333);
-  transition:background .1s;
-}
-.tp-play{width:70px;background:rgba(3,169,244,.08);color:var(--primary-color,#03a9f4);}
+.tp-btn{flex:1;max-width:80px;height:52px;border-radius:15px;background:rgba(0,0,0,.05);display:flex;align-items:center;justify-content:center;color:var(--primary-text-color,#333);transition:background .1s;}
 .tp-btn:active{background:rgba(0,0,0,.10);}
+.tp-play{background:rgba(3,169,244,.08);color:var(--primary-color,#03a9f4);}
+.tp-play:active{background:rgba(3,169,244,.16);}
+.tp-stop{background:rgba(0,0,0,.05);}
 
 /* Numpad */
-.num-section{display:flex;flex-direction:column;gap:0;}
-.num-toggle{
-  display:flex;align-items:center;gap:6px;
-  height:44px;padding:0 14px;border-radius:13px;
-  background:rgba(0,0,0,.04);
-  font-size:13px;font-weight:600;
-  color:var(--secondary-text-color,#666);
-  transition:background .12s;
-}
+.num-section{display:flex;flex-direction:column;gap:0;width:100%;}
+.num-toggle{display:flex;align-items:center;gap:6px;height:44px;padding:0 14px;border-radius:13px;background:rgba(0,0,0,.04);font-size:13px;font-weight:600;color:var(--secondary-text-color,#666);transition:background .12s;width:100%;}
 .num-toggle:active{background:rgba(0,0,0,.10);}
 .chev{margin-left:auto;transition:transform .2s;}
 .num-grid{display:none;grid-template-columns:repeat(3,1fr);gap:6px;padding-top:8px;}
 .num-grid.open{display:grid;}
-.num-btn{
-  height:54px;border-radius:13px;
-  background:rgba(0,0,0,.04);
-  font-size:19px;font-weight:700;
-  color:var(--primary-text-color,#333);
-  transition:background .1s;
-}
+.num-btn{height:54px;border-radius:13px;background:rgba(0,0,0,.04);font-size:19px;font-weight:700;color:var(--primary-text-color,#333);transition:background .1s;}
 .num-btn:active{background:rgba(0,0,0,.10);}
 
 /* Device Quick Sheet */
@@ -765,7 +972,743 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .cmd-btn span{max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 </style>`; }
 
+// ── Sheet Helpers ─────────────────────────────────────────────────────────
+
+    _sheetHtml() { return `<div class="sh-overlay" id="hcv2-sheet">
+  <div class="sh-backdrop" id="hcv2-bd"></div>
+  <div class="sh-panel">
+    <div class="sh-handle"></div>
+    <div class="sh-head">
+      <button class="sh-nav" id="hcv2-sh-back" style="visibility:hidden">${_svg('chev_left',22)}</button>
+      <span class="sh-title" id="hcv2-sh-title">Gerät wählen</span>
+      <button class="sh-nav" id="hcv2-sh-close">${_svg('close',22)}</button>
+    </div>
+    <div class="sh-body" id="hcv2-sh-body"></div>
+  </div>
+</div>`; }
+
+    _sheetCss() { return `
+.sh-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;pointer-events:none;}
+.sh-overlay.open{pointer-events:all;}
+.sh-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s;}
+.sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.42);}
+.sh-panel{position:relative;width:100%;max-height:72vh;background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:24px 24px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+.sh-overlay.open .sh-panel{transform:translateY(0);}
+.sh-handle{width:40px;height:4px;border-radius:2px;background:rgba(0,0,0,.12);align-self:center;margin:10px 0 0;flex-shrink:0;}
+.sh-head{display:flex;align-items:center;padding:8px 8px 12px;gap:4px;flex-shrink:0;}
+.sh-title{flex:1;text-align:center;font-size:15px;font-weight:800;color:var(--primary-text-color,#333);}
+.sh-nav{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;color:var(--secondary-text-color,#666);transition:background .12s;}
+.sh-nav:active{background:rgba(0,0,0,.08);}
+.sh-body{overflow-y:auto;padding:0 12px 20px;flex:1;}
+.sh-empty{padding:28px 0;text-align:center;color:var(--secondary-text-color,#888);font-size:13px;line-height:1.6;}
+.sh-empty small{font-size:11px;} .sh-empty code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 4px;}
+.dev-row{display:flex;align-items:center;gap:12px;padding:15px 8px;border-radius:14px;cursor:pointer;transition:background .12s;}
+.dev-row:active{background:rgba(0,0,0,.06);}
+.dev-name{flex:1;font-size:15px;font-weight:700;color:var(--primary-text-color,#333);}
+.cmd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:4px 0;}
+.cmd-btn{min-height:64px;border-radius:16px;background:rgba(0,0,0,.04);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--primary-text-color,#333);transition:background .12s;overflow:hidden;padding:6px 4px;}
+.cmd-btn:active{background:rgba(0,0,0,.10);}
+.cmd-btn span{max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}`; }
+
+    _numpadHtml() { return `
+<div class="snp-wrap">
+  <button id="hcv2-numtgl" class="snp-toggle"><span>123</span>${_svg('chev_down',16)}</button>
+  <div id="hcv2-numgrid" class="snp-grid">
+    <button class="snp-btn" data-btn="num_1">1</button>
+    <button class="snp-btn" data-btn="num_2">2</button>
+    <button class="snp-btn" data-btn="num_3">3</button>
+    <button class="snp-btn" data-btn="num_4">4</button>
+    <button class="snp-btn" data-btn="num_5">5</button>
+    <button class="snp-btn" data-btn="num_6">6</button>
+    <button class="snp-btn" data-btn="num_7">7</button>
+    <button class="snp-btn" data-btn="num_8">8</button>
+    <button class="snp-btn" data-btn="num_9">9</button>
+    <button class="snp-btn snp-back" data-btn="back">⌫</button>
+    <button class="snp-btn" data-btn="num_0">0</button>
+    <button class="snp-btn snp-ok" data-btn="ok">OK</button>
+  </div>
+</div>`; }
+
+    _numpadCss() { return `
+.snp-wrap{width:100%;margin-top:4px;}
+.snp-toggle{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:40px;border-radius:12px;background:rgba(128,128,128,.09);font-size:12px;font-weight:700;color:inherit;letter-spacing:.5px;transition:background .12s;}
+.snp-toggle:active{background:rgba(128,128,128,.18);}
+.snp-toggle svg{transition:transform .2s;opacity:.55;}
+.snp-toggle.open svg{transform:rotate(180deg);}
+.snp-grid{display:none;grid-template-columns:repeat(3,1fr);gap:6px;padding:8px 0 2px;}
+.snp-grid.open{display:grid;}
+.snp-btn{height:48px;border-radius:12px;background:rgba(128,128,128,.08);font-size:18px;font-weight:700;color:inherit;transition:background .1s;}
+.snp-btn:active{background:rgba(128,128,128,.18);}
+.snp-back{font-size:15px;}
+.snp-ok{font-size:13px;font-weight:800;letter-spacing:.5px;}`; }
+
+// ============================================================================
+// Apple TV Skin (Siri Remote 3rd Gen)
+// ============================================================================
+
+    _renderAppleTv() {
+        const acts = this._activities();
+        const appsHtml = acts.map(a => {
+            const ico = a.icon ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>` : '';
+            return `<div class="act-pill" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+        this.shadowRoot.innerHTML = this._cssAppleTv() + `
+<div class="card"><div class="atv-remote" id="hcv2-card">
+  <div class="atv-topbar">
+    <button class="atv-circ" id="hcv2-devbtn">${_svg('devices',18)}</button>
+    <span class="atv-st" id="hcv2-status"></span>
+    <button class="atv-circ" data-btn="off">${_svg('power',18)}</button>
+  </div>
+  <div class="atv-pad-wrap"><div class="atv-pad">
+    <button class="atv-dir" data-btn="dir_up">${_svg('dir_up',26)}</button>
+    <div class="atv-mid">
+      <button class="atv-dir" data-btn="dir_left">${_svg('dir_left',26)}</button>
+      <button class="atv-ok" data-btn="ok">OK</button>
+      <button class="atv-dir" data-btn="dir_right">${_svg('dir_right',26)}</button>
+    </div>
+    <button class="atv-dir" data-btn="dir_down">${_svg('dir_down',26)}</button>
+  </div></div>
+  <div class="atv-r2">
+    <button class="atv-b2" data-btn="back">${_svg('back',22)}<span>Back</span></button>
+    <button class="atv-b2" data-btn="exit">${_svg('exit',22)}<span>Home</span></button>
+  </div>
+  <div class="atv-r2">
+    <button class="atv-b2" data-btn="mute">${_svg('mute',22)}<span>Mute</span></button>
+    <button class="atv-b2 atv-play" data-btn="play">${_svg('play',28)}</button>
+  </div>
+  <div class="atv-volch" id="hcv2-volch">
+    <button class="atv-vol" data-btn="vol_down">${_svg('vol_down',20)}<span>Vol−</span></button>
+    <button class="atv-vol" data-btn="vol_up">${_svg('vol_up',20)}<span>Vol+</span></button>
+  </div>
+  <div class="act-pills" id="hcv2-pills">${appsHtml}</div>
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf: ${_e(this._conf._err)}</div>` : ''}
+</div></div>${this._sheetHtml()}`;
+        this._bindEvents(); this._updateLive();
+    }
+
+    _cssAppleTv() { return `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;}
+.card{background:var(--ha-card-background,var(--card-background-color,#000));padding:8px;border-radius:var(--ha-card-border-radius,12px);}
+.atv-remote{background:linear-gradient(180deg,#282828 0%,#1a1a1a 100%);border-radius:44px;padding:20px 18px 24px;max-width:268px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.07);}
+.atv-topbar{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 2px;}
+.atv-circ{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;color:#909090;transition:background .12s;}
+.atv-circ:active{background:rgba(255,255,255,.14);}
+.atv-st{flex:1;text-align:center;font-size:10px;font-weight:600;color:#505050;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.atv-pad-wrap{display:flex;justify-content:center;}
+.atv-pad{width:212px;height:212px;border-radius:50%;background:radial-gradient(circle,#343434 55%,#282828 100%);box-shadow:inset 0 2px 8px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.4);display:grid;grid-template-rows:1fr auto 1fr;align-items:center;justify-items:center;}
+.atv-mid{display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 8px;}
+.atv-dir{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#d0d0d0;transition:background .1s;}
+.atv-dir:active{background:rgba(255,255,255,.13);}
+.atv-ok{flex:1;height:88px;border-radius:20px;background:linear-gradient(180deg,#3e3e3e 0%,#2e2e2e 100%);color:#f0f0f0;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);transition:background .1s;margin:0 6px;}
+.atv-ok:active{background:linear-gradient(180deg,#4a4a4a 0%,#3a3a3a 100%);}
+.atv-r2{display:flex;gap:10px;width:100%;}
+.atv-b2{flex:1;height:50px;border-radius:16px;background:rgba(255,255,255,.065);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#a0a0a0;font-size:9px;font-weight:700;letter-spacing:.3px;transition:background .12s;}
+.atv-b2:active{background:rgba(255,255,255,.13);}
+.atv-play{background:rgba(255,255,255,.10);color:#f0f0f0;}
+.atv-play:active{background:rgba(255,255,255,.18);}
+.atv-volch{display:flex;gap:8px;width:100%;}
+.atv-vol{flex:1;height:46px;border-radius:14px;background:rgba(255,255,255,.065);display:flex;gap:8px;align-items:center;justify-content:center;color:#a0a0a0;font-size:10px;font-weight:700;transition:background .12s;}
+.atv-vol:active{background:rgba(255,255,255,.13);}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:2px;}
+.act-pill{height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(255,255,255,.07);color:#707070;transition:all .15s;}
+.act-pill--on{background:var(--primary-color,#03a9f4);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#03a9f4) 40%,transparent);}
+.act-pill:active{opacity:.75;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+${this._sheetCss()}${this._numpadCss()}</style>`; }
+
+// ============================================================================
+// Chromecast Skin (Google TV, light)
+// ============================================================================
+
+    _renderChromecast() {
+        const acts = this._activities();
+        const appsHtml = acts.map(a => {
+            const ico = a.icon ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>` : '';
+            return `<div class="act-pill" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+        this.shadowRoot.innerHTML = this._cssChromecast() + `
+<div class="card"><div class="cc-remote" id="hcv2-card">
+  <div class="cc-pad-wrap"><div class="cc-pad">
+    <button class="cc-dir" data-btn="dir_up">${_svg('dir_up',26)}</button>
+    <div class="cc-mid">
+      <button class="cc-dir" data-btn="dir_left">${_svg('dir_left',26)}</button>
+      <button class="cc-ok" data-btn="ok">OK</button>
+      <button class="cc-dir" data-btn="dir_right">${_svg('dir_right',26)}</button>
+    </div>
+    <button class="cc-dir" data-btn="dir_down">${_svg('dir_down',26)}</button>
+  </div></div>
+  <div class="cc-r4">
+    <button class="cc-b4" data-btn="back">${_svg('back',20)}<span>Back</span></button>
+    <button class="cc-b4" data-btn="exit">${_svg('exit',20)}<span>Home</span></button>
+    <button class="cc-b4" data-btn="mute">${_svg('mute',20)}<span>Mute</span></button>
+    <button class="cc-b4" data-btn="menu">${_svg('menu',20)}<span>Menu</span></button>
+  </div>
+  <div class="cc-tp">
+    <button class="cc-tp-btn" data-btn="rewind">${_svg('rewind',22)}</button>
+    <button class="cc-tp-btn cc-play" data-btn="play">${_svg('play',28)}</button>
+    <button class="cc-tp-btn" data-btn="fast_forward">${_svg('fwd',22)}</button>
+  </div>
+  <div class="cc-volch" id="hcv2-volch">
+    <div class="cc-rck">
+      <button class="cc-rb" data-btn="vol_up">${_svg('vol_up',18)}</button>
+      <span class="cc-rklbl">VOL</span>
+      <button class="cc-rb" data-btn="vol_down">${_svg('vol_down',18)}</button>
+    </div>
+    <div class="cc-rck">
+      <button class="cc-rb" data-btn="ch_up">${_svg('dir_up',18)}</button>
+      <span class="cc-rklbl">CH</span>
+      <button class="cc-rb" data-btn="ch_down">${_svg('dir_down',18)}</button>
+    </div>
+  </div>
+  <div class="cc-bot">
+    <button class="cc-circ" data-btn="off">${_svg('power',18)}</button>
+    <span class="cc-st" id="hcv2-status"></span>
+    <button class="cc-circ" id="hcv2-devbtn">${_svg('devices',18)}</button>
+  </div>
+  <div class="act-pills" id="hcv2-pills">${appsHtml}</div>
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf: ${_e(this._conf._err)}</div>` : ''}
+</div></div>${this._sheetHtml()}`;
+        this._bindEvents(); this._updateLive();
+    }
+
+    _cssChromecast() { return `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;}
+.card{background:var(--ha-card-background,var(--card-background-color,#f5f5f0));padding:8px;border-radius:var(--ha-card-border-radius,12px);}
+.cc-remote{background:#ebebea;border-radius:40px;padding:20px 18px 24px;max-width:272px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:14px;box-shadow:0 4px 20px rgba(0,0,0,.15),inset 0 1px 0 rgba(255,255,255,.8);}
+.cc-pad-wrap{display:flex;justify-content:center;}
+.cc-pad{width:214px;height:214px;border-radius:50%;background:radial-gradient(circle,#ffffff 50%,#e0e0de 100%);box-shadow:0 3px 12px rgba(0,0,0,.15),inset 0 1px 2px rgba(255,255,255,.9);display:grid;grid-template-rows:1fr auto 1fr;align-items:center;justify-items:center;}
+.cc-mid{display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 8px;}
+.cc-dir{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#3c4043;transition:background .1s;}
+.cc-dir:active{background:rgba(0,0,0,.08);}
+.cc-ok{flex:1;height:88px;border-radius:20px;background:#ffffff;color:#3c4043;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,.12);transition:background .1s;margin:0 6px;}
+.cc-ok:active{background:#f0f0f0;}
+.cc-r4{display:flex;gap:8px;width:100%;}
+.cc-b4{flex:1;height:52px;border-radius:16px;background:rgba(0,0,0,.055);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#5f6368;font-size:9px;font-weight:700;letter-spacing:.3px;transition:background .12s;}
+.cc-b4:active{background:rgba(0,0,0,.10);}
+.cc-tp{display:flex;gap:8px;width:100%;}
+.cc-tp-btn{flex:1;height:50px;border-radius:16px;background:rgba(0,0,0,.055);display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .12s;}
+.cc-tp-btn:active{background:rgba(0,0,0,.10);}
+.cc-play{background:rgba(66,133,244,.1);color:#4285f4;}
+.cc-play:active{background:rgba(66,133,244,.18);}
+.cc-volch{display:flex;gap:8px;width:100%;}
+.cc-rck{flex:1;display:flex;flex-direction:column;align-items:center;background:rgba(0,0,0,.055);border-radius:20px;overflow:hidden;}
+.cc-rb{width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .1s;}
+.cc-rb:active{background:rgba(0,0,0,.08);}
+.cc-rklbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#9aa0a6;line-height:1;padding:2px 0;}
+.cc-bot{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 4px;}
+.cc-circ{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.06);display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .12s;}
+.cc-circ:active{background:rgba(0,0,0,.12);}
+.cc-st{flex:1;text-align:center;font-size:10px;font-weight:600;color:#9aa0a6;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:2px;}
+.act-pill{height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(0,0,0,.07);color:#5f6368;transition:all .15s;}
+.act-pill--on{background:var(--primary-color,#4285f4);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#4285f4) 40%,transparent);}
+.act-pill:active{opacity:.75;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+${this._sheetCss()}${this._numpadCss()}</style>`; }
+
+// ============================================================================
+// Roku Skin (Voice Remote Pro, purple accents)
+// ============================================================================
+
+    _renderRoku() {
+        const acts = this._activities();
+        const appsHtml = acts.map(a => {
+            const ico = a.icon ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>` : '';
+            return `<div class="act-pill" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+        this.shadowRoot.innerHTML = this._cssRoku() + `
+<div class="card"><div class="rku-remote" id="hcv2-card">
+  <div class="rku-topbar">
+    <button class="rku-circ" data-btn="off">${_svg('power',20)}</button>
+    <span class="rku-st" id="hcv2-status"></span>
+    <button class="rku-circ" id="hcv2-devbtn">${_svg('devices',20)}</button>
+  </div>
+  <div class="rku-r2">
+    <button class="rku-b2" data-btn="back">${_svg('back',22)}<span>Back</span></button>
+    <button class="rku-b2" data-btn="exit">${_svg('exit',22)}<span>Home</span></button>
+  </div>
+  <div class="rku-pad-wrap"><div class="rku-pad">
+    <button class="rku-dir" data-btn="dir_up">${_svg('dir_up',28)}</button>
+    <div class="rku-mid">
+      <button class="rku-dir" data-btn="dir_left">${_svg('dir_left',28)}</button>
+      <button class="rku-ok" data-btn="ok">OK</button>
+      <button class="rku-dir" data-btn="dir_right">${_svg('dir_right',28)}</button>
+    </div>
+    <button class="rku-dir" data-btn="dir_down">${_svg('dir_down',28)}</button>
+  </div></div>
+  <div class="rku-r3">
+    <button class="rku-b3" data-btn="rewind">${_svg('rewind',22)}</button>
+    <button class="rku-b3 rku-play" data-btn="play">${_svg('play',28)}</button>
+    <button class="rku-b3" data-btn="fast_forward">${_svg('fwd',22)}</button>
+  </div>
+  <div class="rku-r2">
+    <button class="rku-b2" data-btn="menu">${_svg('menu',22)}<span>Options</span></button>
+    <button class="rku-b2" data-btn="info">${_svg('info',22)}<span>Info</span></button>
+  </div>
+  <div class="rku-volch" id="hcv2-volch">
+    <div class="rku-rck">
+      <button class="rku-rb" data-btn="vol_up">${_svg('vol_up',18)}</button>
+      <span class="rku-rklbl">VOL</span>
+      <button class="rku-rb" data-btn="vol_down">${_svg('vol_down',18)}</button>
+    </div>
+    <button class="rku-mute" data-btn="mute">${_svg('mute',22)}</button>
+    <div class="rku-rck">
+      <button class="rku-rb" data-btn="ch_up">${_svg('dir_up',18)}</button>
+      <span class="rku-rklbl">CH</span>
+      <button class="rku-rb" data-btn="ch_down">${_svg('dir_down',18)}</button>
+    </div>
+  </div>
+  <div class="act-pills" id="hcv2-pills">${appsHtml}</div>
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf: ${_e(this._conf._err)}</div>` : ''}
+</div></div>${this._sheetHtml()}`;
+        this._bindEvents(); this._updateLive();
+    }
+
+    _cssRoku() { return `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;}
+.card{background:var(--ha-card-background,var(--card-background-color,#0f1117));padding:8px;border-radius:var(--ha-card-border-radius,12px);}
+.rku-remote{background:linear-gradient(180deg,#1a1a2e 0%,#111122 100%);border-radius:48px;padding:20px 16px 24px;max-width:276px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.04);}
+.rku-topbar{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 4px;}
+.rku-circ{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;color:#8b8ba0;transition:background .12s;}
+.rku-circ:active{background:rgba(255,255,255,.13);}
+.rku-st{flex:1;text-align:center;font-size:10px;font-weight:600;color:#4a4a6a;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rku-r2{display:flex;gap:10px;width:100%;}
+.rku-b2{flex:1;height:50px;border-radius:16px;background:rgba(255,255,255,.055);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#8b8ba0;font-size:9px;font-weight:700;letter-spacing:.3px;transition:background .12s;}
+.rku-b2:active{background:rgba(255,255,255,.12);}
+.rku-pad-wrap{display:flex;justify-content:center;}
+.rku-pad{width:218px;height:218px;border-radius:50%;background:radial-gradient(circle,#28284a 55%,#1e1e38 100%);box-shadow:inset 0 2px 8px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.4);display:grid;grid-template-rows:1fr auto 1fr;align-items:center;justify-items:center;}
+.rku-mid{display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 8px;}
+.rku-dir{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#9090b8;transition:background .1s;}
+.rku-dir:active{background:rgba(139,92,246,.2);}
+.rku-ok{flex:1;height:90px;border-radius:20px;background:linear-gradient(180deg,#3a2d6e 0%,#2e2258 100%);color:#e0d8ff;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(139,92,246,.3);transition:background .1s;margin:0 6px;}
+.rku-ok:active{background:linear-gradient(180deg,#452f80 0%,#38266a 100%);}
+.rku-r3{display:flex;gap:8px;width:100%;}
+.rku-b3{flex:1;height:52px;border-radius:16px;background:rgba(255,255,255,.055);display:flex;align-items:center;justify-content:center;color:#8b8ba0;transition:background .12s;}
+.rku-b3:active{background:rgba(255,255,255,.12);}
+.rku-play{background:rgba(139,92,246,.15);color:#8b5cf6;}
+.rku-play:active{background:rgba(139,92,246,.25);}
+.rku-volch{display:flex;gap:10px;align-items:center;width:100%;}
+.rku-rck{flex:1;display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,.055);border-radius:20px;overflow:hidden;}
+.rku-rb{width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#8b8ba0;transition:background .1s;}
+.rku-rb:active{background:rgba(255,255,255,.10);}
+.rku-rklbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#4a4a6a;line-height:1;padding:2px 0;}
+.rku-mute{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.055);display:flex;align-items:center;justify-content:center;color:#8b8ba0;transition:background .12s;}
+.rku-mute:active{background:rgba(255,255,255,.12);}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:2px;}
+.act-pill{height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(255,255,255,.07);color:#606080;transition:all .15s;}
+.act-pill--on{background:var(--primary-color,#8b5cf6);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#8b5cf6) 40%,transparent);}
+.act-pill:active{opacity:.75;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+${this._sheetCss()}${this._numpadCss()}</style>`; }
+
+// ============================================================================
+// NVIDIA Shield Skin (Shield Remote Style 2, green accents)
+// ============================================================================
+
+    _renderNvidia() {
+        const acts = this._activities();
+        const appsHtml = acts.map(a => {
+            const ico = a.icon ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>` : '';
+            return `<div class="act-pill" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+        this.shadowRoot.innerHTML = this._cssNvidia() + `
+<div class="card"><div class="nvd-remote" id="hcv2-card">
+  <div class="nvd-topbar">
+    <button class="nvd-b2" data-btn="off">${_svg('power',18)}<span>Power</span></button>
+    <span class="nvd-st" id="hcv2-status"></span>
+    <button class="nvd-b2" data-btn="menu">${_svg('menu',18)}<span>Menu</span></button>
+  </div>
+  <div class="nvd-devrow">
+    <button class="nvd-circ" id="hcv2-devbtn">${_svg('devices',20)}</button>
+  </div>
+  <div class="nvd-pad-wrap"><div class="nvd-pad">
+    <button class="nvd-dir" data-btn="dir_up">${_svg('dir_up',26)}</button>
+    <div class="nvd-mid">
+      <button class="nvd-dir" data-btn="dir_left">${_svg('dir_left',26)}</button>
+      <button class="nvd-ok" data-btn="ok">OK</button>
+      <button class="nvd-dir" data-btn="dir_right">${_svg('dir_right',26)}</button>
+    </div>
+    <button class="nvd-dir" data-btn="dir_down">${_svg('dir_down',26)}</button>
+  </div></div>
+  <div class="nvd-r2">
+    <button class="nvd-b2" data-btn="back">${_svg('back',22)}<span>Back</span></button>
+    <button class="nvd-b2" data-btn="exit">${_svg('exit',22)}<span>Home</span></button>
+  </div>
+  <div class="nvd-tp">
+    <button class="nvd-tp-btn" data-btn="rewind">${_svg('rewind',22)}</button>
+    <button class="nvd-tp-btn nvd-play" data-btn="play">${_svg('play',28)}</button>
+    <button class="nvd-tp-btn" data-btn="fast_forward">${_svg('fwd',22)}</button>
+  </div>
+  <div class="nvd-volch" id="hcv2-volch">
+    <div class="nvd-rck">
+      <button class="nvd-rb" data-btn="vol_up">${_svg('vol_up',18)}</button>
+      <span class="nvd-rklbl">VOL</span>
+      <button class="nvd-rb" data-btn="vol_down">${_svg('vol_down',18)}</button>
+    </div>
+    <button class="nvd-mute" data-btn="mute">${_svg('mute',22)}</button>
+    <div class="nvd-rck">
+      <button class="nvd-rb" data-btn="ch_up">${_svg('dir_up',18)}</button>
+      <span class="nvd-rklbl">CH</span>
+      <button class="nvd-rb" data-btn="ch_down">${_svg('dir_down',18)}</button>
+    </div>
+  </div>
+  <div class="act-pills" id="hcv2-pills">${appsHtml}</div>
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf: ${_e(this._conf._err)}</div>` : ''}
+</div></div>${this._sheetHtml()}`;
+        this._bindEvents(); this._updateLive();
+    }
+
+    _cssNvidia() { return `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;}
+.card{background:var(--ha-card-background,var(--card-background-color,#000));padding:8px;border-radius:var(--ha-card-border-radius,12px);}
+.nvd-remote{background:linear-gradient(180deg,#141414 0%,#0a0a0a 100%);border-radius:22px;padding:18px 16px 22px;max-width:280px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.7),inset 0 1px 0 rgba(118,185,0,.1);}
+.nvd-topbar{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.nvd-b2{flex:1;height:46px;border-radius:12px;background:rgba(255,255,255,.055);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#888;font-size:8px;font-weight:700;letter-spacing:.3px;transition:background .12s;}
+.nvd-b2:active{background:rgba(255,255,255,.12);}
+.nvd-st{flex:2;text-align:center;font-size:10px;font-weight:600;color:#404040;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.nvd-devrow{display:flex;justify-content:center;}
+.nvd-circ{width:44px;height:44px;border-radius:50%;background:rgba(118,185,0,.12);display:flex;align-items:center;justify-content:center;color:#76b900;transition:background .12s;}
+.nvd-circ:active{background:rgba(118,185,0,.22);}
+.nvd-pad-wrap{display:flex;justify-content:center;}
+.nvd-pad{width:214px;height:214px;border-radius:16px;background:radial-gradient(circle,#1e1e1e 50%,#141414 100%);box-shadow:inset 0 2px 8px rgba(0,0,0,.6),0 0 0 1px rgba(118,185,0,.08);display:grid;grid-template-rows:1fr auto 1fr;align-items:center;justify-items:center;}
+.nvd-mid{display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 8px;}
+.nvd-dir{width:58px;height:58px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#b0b0b0;transition:background .1s;}
+.nvd-dir:active{background:rgba(118,185,0,.15);}
+.nvd-ok{flex:1;height:88px;border-radius:16px;background:linear-gradient(180deg,rgba(118,185,0,.18) 0%,rgba(118,185,0,.08) 100%);color:#76b900;font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;border:1px solid rgba(118,185,0,.2);transition:background .1s;margin:0 6px;}
+.nvd-ok:active{background:linear-gradient(180deg,rgba(118,185,0,.28) 0%,rgba(118,185,0,.15) 100%);}
+.nvd-r2{display:flex;gap:8px;width:100%;}
+.nvd-tp{display:flex;gap:8px;width:100%;}
+.nvd-tp-btn{flex:1;height:50px;border-radius:12px;background:rgba(255,255,255,.055);display:flex;align-items:center;justify-content:center;color:#888;transition:background .12s;}
+.nvd-tp-btn:active{background:rgba(255,255,255,.12);}
+.nvd-play{background:rgba(118,185,0,.12);color:#76b900;}
+.nvd-play:active{background:rgba(118,185,0,.22);}
+.nvd-volch{display:flex;gap:10px;align-items:center;width:100%;}
+.nvd-rck{flex:1;display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,.055);border-radius:16px;overflow:hidden;}
+.nvd-rb{width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#888;transition:background .1s;}
+.nvd-rb:active{background:rgba(255,255,255,.10);}
+.nvd-rklbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#3a3a3a;line-height:1;padding:2px 0;}
+.nvd-mute{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.055);display:flex;align-items:center;justify-content:center;color:#888;transition:background .12s;}
+.nvd-mute:active{background:rgba(255,255,255,.12);}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:2px;}
+.act-pill{height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(255,255,255,.06);color:#606060;transition:all .15s;}
+.act-pill--on{background:var(--primary-color,#76b900);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#76b900) 40%,transparent);}
+.act-pill:active{opacity:.75;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+${this._sheetCss()}${this._numpadCss()}</style>`; }
+
+    // ── JVC Skin ─────────────────────────────────────────────────────────────
+
+    _renderJvc() {
+        const acts     = this._activities();
+        const current  = this._lastAct || 'PowerOff';
+        const appsHtml = acts.map(a => {
+            const ico = a.icon ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>` : '';
+            return `<div class="act-pill" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+        this.shadowRoot.innerHTML = this._cssJvc() + `
+<div class="card"><div class="jvc-remote" id="hcv2-card">
+
+  <div class="jvc-topbar">
+    <button class="jvc-circ" data-btn="off">${_svg('power',20)}</button>
+    <span class="jvc-status" id="hcv2-status"></span>
+    <button class="jvc-circ" id="hcv2-devbtn">${_svg('devices',20)}</button>
+  </div>
+
+  <div class="jvc-ring-wrap"><div class="jvc-ring">
+    <button class="jvc-dir" data-btn="dir_up">${_svg('dir_up',26)}</button>
+    <div class="jvc-ring-mid">
+      <button class="jvc-dir" data-btn="dir_left">${_svg('dir_left',26)}</button>
+      <button class="jvc-ok" data-btn="ok">OK</button>
+      <button class="jvc-dir" data-btn="dir_right">${_svg('dir_right',26)}</button>
+    </div>
+    <button class="jvc-dir" data-btn="dir_down">${_svg('dir_down',26)}</button>
+  </div></div>
+
+  <div class="jvc-row3">
+    <button class="jvc-rnd" data-btn="back">${_svg('back',20)}<span>Back</span></button>
+    <button class="jvc-rnd" data-btn="exit">${_svg('exit',20)}<span>Home</span></button>
+    <button class="jvc-rnd" data-btn="menu">${_svg('menu',20)}<span>Menu</span></button>
+  </div>
+
+  <div class="jvc-row3">
+    <button class="jvc-rnd" data-btn="rewind">${_svg('rewind',20)}</button>
+    <button class="jvc-rnd jvc-play" data-btn="play">${_svg('play',26)}</button>
+    <button class="jvc-rnd" data-btn="fast_forward">${_svg('fwd',20)}</button>
+  </div>
+
+  <div class="jvc-volch">
+    <div class="jvc-rck">
+      <button class="jvc-rb" data-btn="vol_up">${_svg('vol_up',18)}</button>
+      <span class="jvc-rklbl">VOL</span>
+      <button class="jvc-rb" data-btn="vol_down">${_svg('vol_down',18)}</button>
+    </div>
+    <button class="jvc-mute" data-btn="mute">${_svg('mute',22)}</button>
+    <div class="jvc-rck">
+      <button class="jvc-rb" data-btn="ch_up">${_svg('dir_up',18)}</button>
+      <span class="jvc-rklbl">CH</span>
+      <button class="jvc-rb" data-btn="ch_down">${_svg('dir_down',18)}</button>
+    </div>
+  </div>
+
+  <div class="jvc-color">
+    <button class="jvc-col c-red"  data-btn="red"></button>
+    <button class="jvc-col c-green" data-btn="green"></button>
+    <button class="jvc-col c-yellow" data-btn="yellow"></button>
+    <button class="jvc-col c-blue"  data-btn="blue"></button>
+  </div>
+
+  <div class="act-pills" id="hcv2-pills">${appsHtml}</div>
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf: ${_e(this._conf._err)}</div>` : ''}
+</div></div>${this._sheetHtml()}`;
+        this._bindEvents(); this._updateLive();
+    }
+
+    _cssJvc() { return `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;}
+.card{background:var(--ha-card-background,var(--card-background-color,#000));padding:8px;border-radius:var(--ha-card-border-radius,12px);}
+.jvc-remote{background:linear-gradient(180deg,#252525 0%,#1a1a1a 100%);border-radius:28px;padding:18px 16px 22px;max-width:272px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);}
+.jvc-topbar{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 2px;}
+.jvc-status{flex:1;text-align:center;font-size:10px;font-weight:600;color:#505050;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;}
+.jvc-circ{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;color:#909090;transition:background .12s;}
+.jvc-circ:active{background:rgba(255,255,255,.14);}
+.jvc-ring-wrap{display:flex;justify-content:center;}
+.jvc-ring{width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,#2e2e2e 52%,#222 100%);box-shadow:inset 0 2px 10px rgba(0,0,0,.6),0 4px 12px rgba(0,0,0,.5);display:grid;grid-template-rows:1fr auto 1fr;align-items:center;justify-items:center;}
+.jvc-ring-mid{display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 6px;}
+.jvc-dir{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#c0c0c0;transition:background .1s;}
+.jvc-dir:active{background:rgba(255,255,255,.12);}
+.jvc-ok{flex:1;height:80px;border-radius:18px;background:linear-gradient(180deg,#3c3c3c 0%,#2c2c2c 100%);color:#f0f0f0;font-size:15px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);transition:background .1s;margin:0 4px;}
+.jvc-ok:active{background:linear-gradient(180deg,#484848 0%,#383838 100%);}
+.jvc-row3{display:flex;gap:8px;width:100%;}
+.jvc-rnd{flex:1;height:48px;border-radius:14px;background:rgba(255,255,255,.065);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#a0a0a0;font-size:9px;font-weight:700;letter-spacing:.3px;transition:background .12s;}
+.jvc-rnd:active{background:rgba(255,255,255,.13);}
+.jvc-play{background:rgba(255,255,255,.10);color:#f0f0f0;}
+.jvc-play:active{background:rgba(255,255,255,.18);}
+.jvc-volch{display:flex;gap:10px;align-items:center;width:100%;}
+.jvc-rck{flex:1;display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,.055);border-radius:16px;overflow:hidden;}
+.jvc-rb{width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#888;transition:background .1s;}
+.jvc-rb:active{background:rgba(255,255,255,.10);}
+.jvc-rklbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#3a3a3a;line-height:1;padding:2px 0;}
+.jvc-mute{width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.055);display:flex;align-items:center;justify-content:center;color:#888;transition:background .12s;}
+.jvc-mute:active{background:rgba(255,255,255,.12);}
+.jvc-color{display:flex;gap:8px;justify-content:center;width:100%;}
+.jvc-col{height:28px;border-radius:8px;flex:1;max-width:52px;transition:opacity .1s;}
+.jvc-col:active{opacity:.7;}
+.c-red{background:#e53935;} .c-green{background:#43a047;} .c-yellow{background:#fdd835;} .c-blue{background:#1e88e5;}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:2px;}
+.act-pill{height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(255,255,255,.07);color:#707070;transition:all .15s;}
+.act-pill--on{background:var(--primary-color,#e53935);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#e53935) 40%,transparent);}
+.act-pill:active{opacity:.75;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+${this._sheetCss()}${this._numpadCss()}</style>`; }
+
+    // ── Onn. Skin (Google TV) ─────────────────────────────────────────────────
+
+    _renderOnn() {
+        const acts     = this._activities();
+        const appsHtml = acts.map(a => {
+            const ico = a.icon ? `<ha-icon icon="${_e(a.icon)}" style="--mdc-icon-size:15px;margin-right:4px;vertical-align:middle;"></ha-icon>` : '';
+            return `<div class="act-pill" data-act="${_e(a.name)}">${ico}${_e(a.label)}</div>`;
+        }).join('');
+        this.shadowRoot.innerHTML = this._cssOnn() + `
+<div class="card"><div class="onn-remote" id="hcv2-card">
+
+  <div class="onn-topbar">
+    <button class="onn-circ onn-pwr" data-btn="off">${_svg('power',18)}</button>
+    <span class="onn-status" id="hcv2-status"></span>
+    <button class="onn-circ onn-src" data-btn="source">${_svg('source',18)}</button>
+  </div>
+
+  <div class="onn-kb-row">
+    <button class="onn-kb" id="hcv2-devbtn">${_svg('devices',20)}</button>
+  </div>
+
+  <div class="onn-ring-wrap"><div class="onn-ring">
+    <button class="onn-dir" data-btn="dir_up">${_svg('dir_up',26)}</button>
+    <div class="onn-ring-mid">
+      <button class="onn-dir" data-btn="dir_left">${_svg('dir_left',26)}</button>
+      <button class="onn-ok" data-btn="ok">OK</button>
+      <button class="onn-dir" data-btn="dir_right">${_svg('dir_right',26)}</button>
+    </div>
+    <button class="onn-dir" data-btn="dir_down">${_svg('dir_down',26)}</button>
+  </div></div>
+
+  <div class="onn-row3">
+    <button class="onn-b3" data-btn="back">${_svg('back',20)}<span>Back</span></button>
+    <button class="onn-b3" data-btn="exit">${_svg('exit',20)}<span>Home</span></button>
+    <button class="onn-b3" data-btn="menu">${_svg('menu',20)}<span>Menu</span></button>
+  </div>
+
+  <div class="onn-volch">
+    <div class="onn-rck">
+      <button class="onn-rb" data-btn="vol_up">${_svg('vol_up',18)}</button>
+      <span class="onn-rklbl">VOL</span>
+      <button class="onn-rb" data-btn="vol_down">${_svg('vol_down',18)}</button>
+    </div>
+    <button class="onn-mute" data-btn="mute">${_svg('mute',22)}</button>
+    <div class="onn-rck">
+      <button class="onn-rb" data-btn="ch_up">${_svg('dir_up',18)}</button>
+      <span class="onn-rklbl">CH</span>
+      <button class="onn-rb" data-btn="ch_down">${_svg('dir_down',18)}</button>
+    </div>
+  </div>
+
+  <div class="act-pills" id="hcv2-pills">${appsHtml}</div>
+  ${this._numpadHtml()}
+  ${this._conf._err ? `<div class="conf-err">Conf: ${_e(this._conf._err)}</div>` : ''}
+</div></div>${this._sheetHtml()}`;
+        this._bindEvents(); this._updateLive();
+    }
+
+    _cssOnn() { return `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;}
+.card{background:var(--ha-card-background,var(--card-background-color,#f5f5f0));padding:8px;border-radius:var(--ha-card-border-radius,12px);}
+.onn-remote{background:linear-gradient(180deg,#eeeeec 0%,#e4e4e2 100%);border-radius:36px;padding:18px 16px 22px;max-width:272px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.9);}
+.onn-topbar{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 4px;}
+.onn-status{flex:1;text-align:center;font-size:10px;font-weight:600;color:#9aa0a6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;}
+.onn-circ{width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.07);display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .12s;}
+.onn-circ:active{background:rgba(0,0,0,.14);}
+.onn-pwr{color:#e53935;}
+.onn-kb-row{display:flex;justify-content:center;}
+.onn-kb{width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.07);display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .12s;}
+.onn-kb:active{background:rgba(0,0,0,.14);}
+.onn-ring-wrap{display:flex;justify-content:center;}
+.onn-ring{width:204px;height:204px;border-radius:50%;background:radial-gradient(circle,#383838 52%,#2a2a2a 100%);box-shadow:0 4px 14px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.06);display:grid;grid-template-rows:1fr auto 1fr;align-items:center;justify-items:center;}
+.onn-ring-mid{display:flex;align-items:center;width:100%;justify-content:space-between;padding:0 6px;}
+.onn-dir{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#c0c0c0;transition:background .1s;}
+.onn-dir:active{background:rgba(255,255,255,.12);}
+.onn-ok{flex:1;height:84px;border-radius:18px;background:linear-gradient(180deg,#484848 0%,#363636 100%);color:#f5f5f5;font-size:15px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);transition:background .1s;margin:0 4px;}
+.onn-ok:active{background:linear-gradient(180deg,#545454 0%,#424242 100%);}
+.onn-row3{display:flex;gap:8px;width:100%;}
+.onn-b3{flex:1;height:50px;border-radius:14px;background:rgba(0,0,0,.06);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#5f6368;font-size:9px;font-weight:700;letter-spacing:.3px;transition:background .12s;}
+.onn-b3:active{background:rgba(0,0,0,.12);}
+.onn-volch{display:flex;gap:10px;align-items:center;width:100%;}
+.onn-rck{flex:1;display:flex;flex-direction:column;align-items:center;background:rgba(0,0,0,.06);border-radius:16px;overflow:hidden;}
+.onn-rb{width:100%;height:40px;display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .1s;}
+.onn-rb:active{background:rgba(0,0,0,.08);}
+.onn-rklbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#9aa0a6;line-height:1;padding:2px 0;}
+.onn-mute{width:50px;height:50px;border-radius:50%;background:rgba(0,0,0,.06);display:flex;align-items:center;justify-content:center;color:#5f6368;transition:background .12s;}
+.onn-mute:active{background:rgba(0,0,0,.12);}
+.act-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;width:100%;padding-top:2px;}
+.act-pill{height:34px;padding:0 14px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(0,0,0,.07);color:#5f6368;transition:all .15s;}
+.act-pill--on{background:var(--primary-color,#4285f4);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--primary-color,#4285f4) 40%,transparent);}
+.act-pill:active{opacity:.75;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+${this._sheetCss()}${this._numpadCss()}</style>`; }
+
+} // end HarmonyCardV2
+
+// ============================================================================
+// Card Editor — GUI-Konfiguration
+// ============================================================================
+
+class HarmonyCardV2Editor extends HTMLElement {
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this._config = {};
+        this._hass   = null;
+    }
+
+    set hass(h) {
+        this._hass = h;
+        const ep = this.shadowRoot.querySelector('ha-entity-picker');
+        if (ep) ep.hass = h;
+    }
+
+    setConfig(config) {
+        this._config = { ...config };
+        this._render();
+    }
+
+    _render() {
+        const c    = this._config;
+        const skin = c.skin || 'flat';
+        const skinOpts = [
+            ['flat',       'Flat (Standard)'],
+            ['fire-tv',    'Fire TV'],
+            ['apple-tv',   'Apple TV'],
+            ['chromecast', 'Chromecast'],
+            ['roku',       'Roku'],
+            ['nvidia',     'NVIDIA SHIELD'],
+            ['jvc',        'JVC'],
+            ['onn',        'Onn. (Google TV)'],
+        ];
+        const skinHtml = skinOpts.map(([v, l]) =>
+            `<option value="${v}"${v === skin ? ' selected' : ''}>${l}</option>`
+        ).join('');
+        this.shadowRoot.innerHTML = `<style>
+.form{display:flex;flex-direction:column;gap:14px;padding:4px 0;}
+ha-entity-picker,ha-textfield,ha-yaml-editor{display:block;width:100%;}
+.row{display:flex;gap:10px;}
+.row>*{flex:1;min-width:0;}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.5px;
+     color:var(--secondary-text-color,#888);text-transform:uppercase;padding:6px 0 0;}
+.skin-sel{width:100%;height:56px;border:1px solid var(--divider-color,#ccc);border-radius:4px;
+  padding:0 10px;font-size:15px;background:var(--card-background-color,#fff);
+  color:var(--primary-text-color,#333);cursor:pointer;}
+</style>
+<div class="form">
+  <ha-entity-picker label="Harmony Entity (remote.*)" domain-filter="remote" allow-custom-entity></ha-entity-picker>
+  <div class="row">
+    <select id="hcv2e-skin" class="skin-sel">${skinHtml}</select>
+    <ha-textfield label="Config-Datei" placeholder="/local/harmony_XXXXXXXX.conf"></ha-textfield>
+  </div>
+  <div class="lbl">Buttons</div>
+  <ha-yaml-editor id="hcv2e-btns"></ha-yaml-editor>
+  <div class="lbl">Dynamic Slots</div>
+  <ha-yaml-editor id="hcv2e-slots"></ha-yaml-editor>
+</div>`;
+
+        const ep = this.shadowRoot.querySelector('ha-entity-picker');
+        ep.hass  = this._hass;
+        ep.value = c.entity || '';
+        ep.addEventListener('value-changed', e => this._up('entity', e.detail.value));
+
+        const sel = this.shadowRoot.getElementById('hcv2e-skin');
+        sel.addEventListener('change', e => this._up('skin', e.target.value));
+
+        const tf = this.shadowRoot.querySelector('ha-textfield');
+        tf.value = c.config_file || '/local/harmony_12563120.conf';
+        tf.addEventListener('change', e => this._up('config_file', e.target.value));
+
+        const btnEd  = this.shadowRoot.getElementById('hcv2e-btns');
+        const sltEd  = this.shadowRoot.getElementById('hcv2e-slots');
+        if (btnEd) {
+            btnEd.defaultValue = c.buttons      || {};
+            btnEd.addEventListener('value-changed', e => {
+                if (e.detail && e.detail.isValid !== false) this._up('buttons', e.detail.value);
+            });
+        }
+        if (sltEd) {
+            sltEd.defaultValue = c.dynamic_slots || {};
+            sltEd.addEventListener('value-changed', e => {
+                if (e.detail && e.detail.isValid !== false) this._up('dynamic_slots', e.detail.value);
+            });
+        }
+    }
+
+    _up(key, val) {
+        const cfg = { ...this._config };
+        if (val === null || val === undefined || val === '') delete cfg[key];
+        else cfg[key] = val;
+        this._config = cfg;
+        this.dispatchEvent(new CustomEvent('config-changed', {
+            detail: { config: cfg }, bubbles: true, composed: true,
+        }));
+    }
 }
+customElements.define('harmony-card-v2-editor', HarmonyCardV2Editor);
 
 customElements.define('harmony-card-v2', HarmonyCardV2);
 
