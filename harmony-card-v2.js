@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.0.0';
+const HCV2_VERSION = '2.1.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -31,8 +31,8 @@ const _e = (s) => {
 
 // MDI SVG paths used in the card
 const _P = {
-    vol_up:       'M5,9V15H9L14,20V4L9,9M18.5,12C18.5,10.23 17.5,8.71 16,7.97V16C17.5,15.29 18.5,13.76 18.5,12Z',
-    vol_down:     'M5,9V15H9L14,20V4L9,9M21.89,13.54C21.96,13.03 22,12.52 22,12C22,9.26 20.76,6.82 18.83,5.17L17.41,6.59C18.91,7.91 19.9,9.84 19.9,12A7.9,7.9 0 0,1 12,19.9C10.62,19.9 9.32,19.54 8.18,18.91L6.69,20.39C8.24,21.37 10.05,21.9 12,21.9C14.37,21.9 16.56,21.06 18.27,19.65L19.59,20.97L21.07,19.47L20.02,18.42C20.96,17.28 21.63,15.95 21.89,14.46M3.27,4.27L2,5.55L4.39,7.94C3.53,9.21 3,10.55 3,12C3,15.79 5.21,19 8.4,20.8L9.88,19.32C7.1,17.9 5.1,15.17 5.1,12C5.1,10.93 5.35,9.92 5.8,9.01L7.41,10.62C7.15,11.07 7,11.52 7,12A5,5 0 0,0 12,17C12.5,17 12.96,16.87 13.4,16.7L15.12,18.42L16.88,16.68L5.55,5.55L3.27,4.27Z',
+    vol_up:       'M3,9V15H7L12,20V4L7,9H3M19,11H17V9H15V11H13V13H15V15H17V13H19V11Z',
+    vol_down:     'M3,9V15H7L12,20V4L7,9H3M13,11H19V13H13Z',
     mute:         'M3,9V15H7L12,20V4L7,9M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.01,19.86 21,16.28 21,12C21,7.72 18.01,4.14 14,3.23Z',
     dir_up:       'M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z',
     dir_down:     'M7.41,8.59L12,13.17L16.59,8.59L18,10L12,16L6,10L7.41,8.59Z',
@@ -79,6 +79,29 @@ function _svg(key, sz, fill) {
     if (!d) return '';
     return `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${fill}"><path d="${d}"/></svg>`;
 }
+
+// Auto-fill fallback command names per button (matched against Harmony Conf)
+const HCV2_FALLBACKS = {
+    vol_up:'VolumeUp', vol_down:'VolumeDown', mute:'Mute',
+    ch_up:'ChannelUp', ch_down:'ChannelDown',
+    dir_up:'DirectionUp', dir_down:'DirectionDown',
+    dir_left:'DirectionLeft', dir_right:'DirectionRight',
+    ok:['OK','Select','Enter'], back:['Back','Return','Exit'],
+    exit:['Exit','Back','Return'], menu:['Menu','ContextMenu'],
+    info:['Info','DisplayInfo'], source:['InputToggle','Input','Source'],
+    play:'Play', pause:'Pause', stop:'Stop',
+    rewind:'Rewind', fast_forward:'FastForward',
+    skip_back:['SkipBack','SkipBackward','Previous'],
+    skip_forward:['SkipForward','Next'],
+    record:'Record', power:'PowerOff',
+    red:'Red', green:'Green', yellow:'Yellow', blue:'Blue',
+    dvr_1:['DVR','PVR'], dvr_2:['Guide','EPG'], dvr_3:'Info',
+    num_0:['Number0','0'], num_1:['Number1','1'], num_2:['Number2','2'],
+    num_3:['Number3','3'], num_4:['Number4','4'], num_5:['Number5','5'],
+    num_6:['Number6','6'], num_7:['Number7','7'], num_8:['Number8','8'],
+    num_9:['Number9','9'], num_minus:['Dash','Minus','-'],
+    num_enter:['Enter','Select','OK'],
+};
 
 // ============================================================================
 
@@ -255,6 +278,13 @@ class HarmonyCardV2 extends HTMLElement {
   <!-- Activity pills -->
   <div class="act-scroll" id="hcv2-pills">${pillsHtml || '<span class="pill-empty">Config laden…</span>'}</div>
 
+  ${this.config.show_display ? `
+  <!-- Activity display bar -->
+  <div class="flt-display" id="hcv2-display">
+    <div class="disp-dot" id="hcv2-disp-dot"></div>
+    <span class="disp-act" id="hcv2-disp-act">Kein Gerät aktiv</span>
+  </div>` : ''}
+
   ${this._conf._err ? `<div class="conf-err">Conf-Fehler: ${_e(this._conf._err)}</div>` : ''}
 
   <!-- Vol + CH rockers -->
@@ -376,6 +406,12 @@ class HarmonyCardV2 extends HTMLElement {
             `;
             }
         }
+
+        // Activity display bar (flat skin, show_display: true)
+        const dispAct = root.getElementById('hcv2-disp-act');
+        const dispDot = root.getElementById('hcv2-disp-dot');
+        if (dispAct) dispAct.textContent = isOn ? current : 'Kein Gerät aktiv';
+        if (dispDot) dispDot.classList.toggle('disp-dot--on', isOn);
 
         // Reset play/pause button icon on activity change
         const pp = root.getElementById('hcv2-pp');
@@ -851,6 +887,12 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 @keyframes hcv2p{0%,100%{opacity:1}50%{opacity:.3}}
 .st-txt{font-size:11px;font-weight:600;color:var(--secondary-text-color,#666);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;}
 .conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
+
+/* Activity display bar */
+.flt-display{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;background:rgba(0,0,0,.06);min-height:38px;}
+.disp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#94a3b8;transition:background .3s;}
+.disp-dot--on{background:#22c55e;}
+.disp-act{font-size:12px;font-weight:600;color:var(--primary-text-color,#333);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Vol/CH */
 .volch{display:flex;align-items:center;justify-content:center;gap:10px;}
@@ -1616,95 +1658,466 @@ class HarmonyCardV2Editor extends HTMLElement {
     constructor() {
         super();
         this.attachShadow({ mode: 'open' });
-        this._config = {};
-        this._hass   = null;
+        this._config         = {};
+        this._hass           = null;
+        this._cmdOptions     = [];
+        this._contextOptions = [{ label: 'Globale Standardbelegung', value: 'global' }];
+        this._currentContext = 'global';
+        this._confData       = null;
+        this._loading        = false;
+        this._loaded         = false;
+        this._loadError      = null;
+        this._openSections   = new Set(['sec-hub']);
+        this._buttonIds = [
+            'exit','menu','back','ok',
+            'dir_up','dir_down','dir_left','dir_right',
+            'vol_up','vol_down','mute','ch_up','ch_down',
+            'play','pause','stop',
+            'skip_back','skip_forward','rewind','fast_forward','record',
+            'info','source',
+            'num_1','num_2','num_3','num_4','num_5','num_6',
+            'num_7','num_8','num_9','num_0','num_minus','num_enter',
+            'dvr_1','dvr_2','dvr_3',
+            'red','green','yellow','blue',
+        ];
     }
 
     set hass(h) {
         this._hass = h;
-        const ep = this.shadowRoot.querySelector('ha-entity-picker');
-        if (ep) ep.hass = h;
+        this.shadowRoot.querySelectorAll('ha-entity-picker').forEach(el => { el.hass = h; });
+        this.shadowRoot.querySelectorAll('ha-selector').forEach(el => { el.hass = h; });
     }
 
     setConfig(config) {
-        this._config = { ...config };
-        this._render();
+        this._config = JSON.parse(JSON.stringify(config || {}));
+        if (!this._config.buttons) this._config.buttons = { global: {} };
+
+        // Preserve open/closed state of sections before rebuild
+        this.shadowRoot.querySelectorAll('details').forEach(d => {
+            if (d.id) { d.open ? this._openSections.add(d.id) : this._openSections.delete(d.id); }
+        });
+
+        if (this._loaded) { this._buildDOM(); return; }
+        if (this._loading) return;
+        this._loading = true;
+        this._fetchConf()
+            .then(() => { this._loading = false; this._loaded = true; this._buildDOM(); })
+            .catch(() => { this._loading = false; this._loaded = true; this._buildDOM(); });
     }
 
-    _render() {
-        const c    = this._config;
-        const skin = c.skin || 'flat';
-        const skinOpts = [
-            ['flat',       'Flat (Standard)'],
-            ['fire-tv',    'Fire TV'],
-            ['apple-tv',   'Apple TV'],
-            ['chromecast', 'Chromecast'],
-            ['roku',       'Roku'],
-            ['nvidia',     'NVIDIA SHIELD'],
-            ['jvc',        'JVC'],
-            ['onn',        'Onn. (Google TV)'],
-        ];
-        const skinHtml = skinOpts.map(([v, l]) =>
-            `<option value="${v}"${v === skin ? ' selected' : ''}>${l}</option>`
-        ).join('');
-        this.shadowRoot.innerHTML = `<style>
-.form{display:flex;flex-direction:column;gap:14px;padding:4px 0;}
-ha-entity-picker,ha-textfield,ha-yaml-editor{display:block;width:100%;}
-.row{display:flex;gap:10px;}
-.row>*{flex:1;min-width:0;}
-.lbl{font-size:11px;font-weight:700;letter-spacing:.5px;
-     color:var(--secondary-text-color,#888);text-transform:uppercase;padding:6px 0 0;}
-.skin-sel{width:100%;height:56px;border:1px solid var(--divider-color,#ccc);border-radius:4px;
-  padding:0 10px;font-size:15px;background:var(--card-background-color,#fff);
-  color:var(--primary-text-color,#333);cursor:pointer;}
-</style>
-<div class="form">
-  <ha-entity-picker label="Harmony Entity (remote.*)" domain-filter="remote" allow-custom-entity></ha-entity-picker>
-  <div class="row">
-    <select id="hcv2e-skin" class="skin-sel">${skinHtml}</select>
-    <ha-textfield label="Config-Datei" placeholder="/local/harmony_XXXXXXXX.conf"></ha-textfield>
-  </div>
-  <div class="lbl">Buttons</div>
-  <ha-yaml-editor id="hcv2e-btns"></ha-yaml-editor>
-  <div class="lbl">Dynamic Slots</div>
-  <ha-yaml-editor id="hcv2e-slots"></ha-yaml-editor>
-</div>`;
+    async _fetchConf() {
+        const url = this._config.config_file || '/local/harmony_12563120.conf';
+        this._loadError = null;
+        try {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            this._confData       = data;
+            this._cmdOptions     = [];
+            this._contextOptions = [{ label: 'Globale Standardbelegung', value: 'global' }];
 
-        const ep = this.shadowRoot.querySelector('ha-entity-picker');
-        ep.hass  = this._hass;
-        ep.value = c.entity || '';
+            if (data.Activities) {
+                const ids = Object.keys(data.Activities).filter(id => id !== '-1');
+                ids.sort((a, b) => { const an=parseInt(a),bn=parseInt(b); return(isNaN(an)||isNaN(bn))?String(a).localeCompare(String(b)):an-bn; });
+                ids.forEach(id => {
+                    const name = data.Activities[id];
+                    this._cmdOptions.push({ label: name + ' (Aktivität)', value: 'activity:::' + name });
+                    this._contextOptions.push({ label: 'Aktion: ' + name, value: name });
+                });
+            }
+            if (data.Devices) {
+                Object.keys(data.Devices).forEach(devName => {
+                    const dev   = data.Devices[devName];
+                    if (!dev || !Array.isArray(dev.commands)) return;
+                    const short = devName.length > 22 ? devName.substring(0,22) + '…' : devName;
+                    dev.commands.forEach(cmd => {
+                        this._cmdOptions.push({ label: cmd + '  (' + short + ')', value: 'command:::' + dev.id + ':::' + cmd });
+                    });
+                });
+            }
+        } catch (err) {
+            this._loadError = 'Conf nicht geladen: ' + url + ' — Datei nach /config/www/ kopieren.';
+        }
+    }
+
+    _buildDOM() {
+        const root = this.shadowRoot;
+        root.innerHTML = `<style>
+:host{display:block;}*,*::before,*::after{box-sizing:border-box;}
+.edt{display:flex;flex-direction:column;gap:12px;padding:4px 0;}
+details{border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--card-background-color,#fff);overflow:visible;}
+summary{cursor:pointer;padding:12px;outline:none;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px;color:var(--primary-text-color);}
+summary::-webkit-details-marker{display:none;}
+.chev{transition:transform .2s;color:var(--secondary-text-color,#888);}
+details[open] .chev{transform:rotate(90deg);}
+.body{padding:0 12px 12px;display:flex;flex-direction:column;gap:12px;}
+.btn-row{display:grid;gap:8px;align-items:center;grid-template-columns:130px 1fr;}
+.lbl{font-size:12px;color:var(--secondary-text-color,#888);margin-bottom:2px;font-weight:500;}
+.btn-label{font-family:monospace;font-size:13px;color:var(--primary-text-color);}
+.ctx-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
+.ctx-row>*:first-child{flex:1;min-width:160px;}
+.native-sel{width:100%;height:44px;padding:4px 8px;border:1px solid var(--divider-color,#888);border-radius:4px;background:var(--input-fill-color,var(--card-background-color,#fff));color:var(--primary-text-color,#212121);font-size:14px;font-family:inherit;cursor:pointer;box-sizing:border-box;}
+.auto-btn{background:var(--secondary-background-color,#e8e8e8);color:var(--primary-text-color);border:1px solid var(--divider-color,#ccc);border-radius:4px;padding:8px 14px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px;font-size:13px;}
+.auto-btn:hover{background:var(--primary-color,#03a9f4);color:#fff;}
+.err{padding:12px;border-radius:6px;background:rgba(204,0,0,.08);color:var(--error-color,#cc0000);font-size:.95em;}
+ha-entity-picker,ha-textfield{display:block;width:100%;}
+.conf-row{display:flex;gap:8px;align-items:flex-end;}
+.conf-row ha-textfield{flex:1;}
+.reload-btn{height:56px;padding:0 14px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--secondary-background-color,#e8e8e8);cursor:pointer;white-space:nowrap;font-size:13px;flex-shrink:0;}
+.toggle-row{display:flex;align-items:center;gap:10px;padding:4px 0;}
+.toggle-row label{font-size:14px;color:var(--primary-text-color);cursor:pointer;}
+.hint{font-size:12px;color:var(--secondary-text-color,#888);padding:4px 0;}
+/* Searchable dropdown */
+.sel-wrap{position:relative;}
+.sel-input{width:100%;height:44px;padding:4px 10px;border:1px solid var(--divider-color,#888);border-radius:4px;background:var(--input-fill-color,var(--card-background-color,#fff));color:var(--primary-text-color,#212121);font-size:13px;font-family:inherit;box-sizing:border-box;cursor:text;outline:none;}
+.sel-input:focus{border-color:var(--primary-color,#03a9f4);}
+.sel-drop{display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;max-height:240px;overflow-y:auto;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#888);border-top:none;border-radius:0 0 4px 4px;box-shadow:0 4px 12px rgba(0,0,0,.18);}
+.sel-grp{padding:5px 10px 3px;font-size:11px;font-weight:700;color:var(--secondary-text-color,#888);text-transform:uppercase;letter-spacing:.06em;background:var(--primary-background-color,#f5f5f5);position:sticky;top:0;z-index:1;}
+.sel-item{padding:7px 12px;font-size:13px;color:var(--primary-text-color,#212121);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sel-item:hover,.sel-item[data-sel]{background:var(--secondary-background-color,#e8e8e8);}
+.sel-empty{padding:10px 12px;font-size:13px;color:var(--secondary-text-color,#888);font-style:italic;}
+</style><div class="edt" id="edt-root"></div>`;
+
+        const edtRoot = root.getElementById('edt-root');
+        if (this._loadError) {
+            const e = document.createElement('div');
+            e.className = 'err'; e.textContent = this._loadError;
+            edtRoot.appendChild(e);
+        }
+        edtRoot.appendChild(this._sectionHub());
+        edtRoot.appendChild(this._sectionSkin());
+        edtRoot.appendChild(this._sectionButtons());
+    }
+
+    _details(id, title) {
+        const det = document.createElement('details');
+        det.id = id;
+        if (this._openSections.has(id)) det.open = true;
+        det.addEventListener('toggle', () => {
+            det.open ? this._openSections.add(id) : this._openSections.delete(id);
+        });
+        const sum = document.createElement('summary');
+        const chev = document.createElement('ha-icon');
+        chev.setAttribute('icon', 'mdi:chevron-right');
+        chev.className = 'chev';
+        const span = document.createElement('span');
+        span.textContent = title;
+        sum.appendChild(chev); sum.appendChild(span);
+        det.appendChild(sum);
+        const body = document.createElement('div');
+        body.className = 'body';
+        det.appendChild(body);
+        return { det, body };
+    }
+
+    _sectionHub() {
+        const { det, body } = this._details('sec-hub', 'Hub');
+
+        const ep = document.createElement('ha-entity-picker');
+        ep.hass = this._hass;
+        ep.label = 'Harmony Entity (remote.*)';
+        ep.value = this._config.entity || '';
+        ep.setAttribute('domain-filter', 'remote');
+        ep.setAttribute('allow-custom-entity', '');
         ep.addEventListener('value-changed', e => this._up('entity', e.detail.value));
+        body.appendChild(this._labeled('Harmony Entity', ep));
 
-        const sel = this.shadowRoot.getElementById('hcv2e-skin');
-        sel.addEventListener('change', e => this._up('skin', e.target.value));
-
-        const tf = this.shadowRoot.querySelector('ha-textfield');
-        tf.value = c.config_file || '/local/harmony_12563120.conf';
+        const confRow = document.createElement('div');
+        confRow.className = 'conf-row';
+        const tf = document.createElement('ha-textfield');
+        tf.label = 'Config-Datei (.conf)';
+        tf.placeholder = '/local/harmony_XXXXXXXX.conf';
+        tf.value = this._config.config_file || '/local/harmony_12563120.conf';
         tf.addEventListener('change', e => this._up('config_file', e.target.value));
+        const reloadBtn = document.createElement('button');
+        reloadBtn.textContent = '↺ Neu laden';
+        reloadBtn.className = 'reload-btn';
+        reloadBtn.type = 'button';
+        reloadBtn.onclick = () => {
+            this._loaded = false; this._loadError = null; this._loading = true;
+            this._fetchConf()
+                .then(() => { this._loading = false; this._loaded = true; this._buildDOM(); })
+                .catch(() => { this._loading = false; this._loaded = true; this._buildDOM(); });
+        };
+        confRow.appendChild(tf); confRow.appendChild(reloadBtn);
+        body.appendChild(confRow);
 
-        const btnEd  = this.shadowRoot.getElementById('hcv2e-btns');
-        const sltEd  = this.shadowRoot.getElementById('hcv2e-slots');
-        if (btnEd) {
-            btnEd.defaultValue = c.buttons      || {};
-            btnEd.addEventListener('value-changed', e => {
-                if (e.detail && e.detail.isValid !== false) this._up('buttons', e.detail.value);
+        return det;
+    }
+
+    _sectionSkin() {
+        const { det, body } = this._details('sec-skin', 'Darstellung');
+
+        const skinOpts = [
+            ['flat','Flat (Standard)'],['fire-tv','Fire TV'],['apple-tv','Apple TV'],
+            ['chromecast','Chromecast'],['roku','Roku'],['nvidia','NVIDIA SHIELD'],
+            ['jvc','JVC'],['onn','Onn. (Google TV)'],
+        ];
+        const sel = document.createElement('select');
+        sel.className = 'native-sel';
+        const curSkin = this._config.skin || 'flat';
+        skinOpts.forEach(([v,l]) => {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = l;
+            if (v === curSkin) o.selected = true;
+            sel.appendChild(o);
+        });
+        sel.onchange = e => this._up('skin', e.target.value);
+        body.appendChild(this._labeled('Skin', sel));
+
+        const dispRow = document.createElement('div');
+        dispRow.className = 'toggle-row';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.id = 'hcv2e-disp';
+        cb.checked = !!this._config.show_display;
+        cb.onchange = e => this._up('show_display', e.target.checked || null);
+        const lbl = document.createElement('label');
+        lbl.setAttribute('for', 'hcv2e-disp');
+        lbl.textContent = 'Aktivitäts-Display anzeigen (Flat-Skin)';
+        dispRow.appendChild(cb); dispRow.appendChild(lbl);
+        body.appendChild(dispRow);
+
+        return det;
+    }
+
+    _sectionButtons() {
+        const { det, body } = this._details('sec-btns', 'Tastenbelegung');
+
+        // Context selector + auto-fill
+        const ctxRow = document.createElement('div');
+        ctxRow.className = 'ctx-row';
+        ctxRow.appendChild(this._labeled('Kontext',
+            this._nativeSelect(this._contextOptions, this._currentContext, '-- Kontext --',
+                v => { this._currentContext = v || 'global'; this._buildDOM(); })
+        ));
+        const autoBtn = document.createElement('button');
+        autoBtn.type = 'button'; autoBtn.className = 'auto-btn';
+        const autoIco = document.createElement('ha-icon');
+        autoIco.setAttribute('icon','mdi:lightning-bolt');
+        autoBtn.appendChild(autoIco);
+        autoBtn.appendChild(document.createTextNode(' Auto-befüllen'));
+        autoBtn.onclick = () => this._applyAutoMapping(this._currentContext);
+        ctxRow.appendChild(autoBtn);
+        body.appendChild(ctxRow);
+
+        const hint = document.createElement('div');
+        hint.className = 'hint';
+        hint.textContent = 'Auto-befüllen: befüllt leere Felder mit dem ersten passenden Befehl aus der Conf. Bereits belegte Felder werden nicht überschrieben.';
+        body.appendChild(hint);
+
+        const ctxButtons = (this._config.buttons && this._config.buttons[this._currentContext]) || {};
+        this._buttonIds.forEach(btnId => {
+            const row = document.createElement('div');
+            row.className = 'btn-row';
+            const lbl = document.createElement('div');
+            lbl.className = 'btn-label';
+            lbl.textContent = this._btnLabel(btnId);
+            row.appendChild(lbl);
+            row.appendChild(this._searchSelect(
+                this._cmdOptions, ctxButtons[btnId] || '', '-- Befehl --',
+                v => this._patchButton(this._currentContext, btnId, v || '')
+            ));
+            body.appendChild(row);
+        });
+
+        return det;
+    }
+
+    // Searchable command dropdown (ported from V1 HarmonyCompanionEditor)
+    _searchSelect(options, currentValue, placeholder, onChange) {
+        const makeLabel = opt => {
+            const v = opt.value || '';
+            if (v.startsWith('activity:::')) return opt.label.replace(' (Aktivität)','');
+            if (v.startsWith('command:::')) {
+                const parts = v.split(':::');
+                const cmdName = parts[2] || v;
+                const m = opt.label.match(/\(([^)]+)\)\s*$/);
+                const devName = m ? m[1].trim() : '';
+                return devName ? cmdName + '  (' + devName + ')' : cmdName;
+            }
+            return opt.label || v;
+        };
+
+        const currentOpt   = (options || []).find(o => o.value === currentValue);
+        const currentLabel = currentOpt ? makeLabel(currentOpt) : (currentValue ? currentValue : '');
+        let selectedValue  = currentValue || '';
+
+        const wrap  = document.createElement('div');
+        wrap.className = 'sel-wrap';
+        const input = document.createElement('input');
+        input.type = 'text'; input.className = 'sel-input';
+        input.value = currentLabel; input.placeholder = placeholder || '-- Suchen…';
+        input.autocomplete = 'off'; input.spellcheck = false;
+        const drop = document.createElement('div');
+        drop.className = 'sel-drop';
+
+        const renderDrop = filter => {
+            drop.innerHTML = '';
+            const f = (filter || '').trim().toLowerCase();
+            const actItems = [];
+            const devMap   = {};
+            (options || []).forEach(opt => {
+                const v   = opt.value || '';
+                const lbl = makeLabel(opt);
+                if (f && !lbl.toLowerCase().includes(f) && !(opt.label||'').toLowerCase().includes(f)) return;
+                if (v.startsWith('activity:::')) {
+                    actItems.push({ label: lbl, value: v });
+                } else if (v.startsWith('command:::')) {
+                    const m = opt.label.match(/\(([^)]+)\)\s*$/);
+                    const devLabel = m ? m[1].trim() : 'Gerät';
+                    if (!devMap[devLabel]) devMap[devLabel] = [];
+                    devMap[devLabel].push({ label: lbl, value: v });
+                }
             });
+            const addGroup = (title, items) => {
+                if (!items || !items.length) return;
+                const grp = document.createElement('div');
+                grp.className = 'sel-grp'; grp.textContent = title;
+                drop.appendChild(grp);
+                items.forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = 'sel-item'; el.textContent = item.label;
+                    if (item.value === selectedValue) el.setAttribute('data-sel','1');
+                    el.onmousedown = e => {
+                        e.preventDefault();
+                        selectedValue = item.value;
+                        input.value = item.label;
+                        drop.style.display = 'none';
+                        try { onChange(item.value); } catch(err) {}
+                    };
+                    drop.appendChild(el);
+                });
+            };
+            addGroup('Aktivitäten', actItems);
+            Object.keys(devMap).forEach(dev => addGroup(dev, devMap[dev]));
+            if (drop.children.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'sel-empty';
+                empty.textContent = f ? 'Keine Ergebnisse für "' + f + '"' : 'Keine Optionen — Conf laden?';
+                drop.appendChild(empty);
+            }
+        };
+
+        input.onfocus = () => { input.select(); renderDrop(''); drop.style.display = 'block'; };
+        input.oninput = () => { renderDrop(input.value); drop.style.display = 'block'; };
+        input.onblur = () => {
+            setTimeout(() => {
+                drop.style.display = 'none';
+                const selOpt = (options||[]).find(o => o.value === selectedValue);
+                input.value = selOpt ? makeLabel(selOpt) : (selectedValue || '');
+            }, 200);
+        };
+        input.onkeydown = e => {
+            if (e.key === 'Escape') { drop.style.display = 'none'; input.blur(); }
+            if ((e.key === 'Delete' || e.key === 'Backspace') && input.value === '') {
+                selectedValue = ''; input.value = '';
+                try { onChange(''); } catch(err) {}
+            }
+        };
+
+        wrap.appendChild(input); wrap.appendChild(drop);
+        return wrap;
+    }
+
+    _nativeSelect(options, currentValue, placeholder, onChange) {
+        const sel = document.createElement('select');
+        sel.className = 'native-sel';
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = placeholder || '-- wählen --';
+        if (!currentValue) empty.selected = true;
+        sel.appendChild(empty);
+        (options || []).forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt.value || ''; o.textContent = opt.label || opt.value;
+            if (opt.value === currentValue) o.selected = true;
+            sel.appendChild(o);
+        });
+        sel.onchange = e => { try { onChange(e.target.value); } catch(err) {} };
+        return sel;
+    }
+
+    _btnLabel(btnId) {
+        const map = {
+            exit:'Exit', menu:'Menü', back:'Zurück', ok:'OK',
+            dir_up:'Oben', dir_down:'Unten', dir_left:'Links', dir_right:'Rechts',
+            vol_up:'Lautstärke +', vol_down:'Lautstärke −', mute:'Stumm',
+            ch_up:'Kanal +', ch_down:'Kanal −',
+            play:'Play', pause:'Pause', stop:'Stop',
+            skip_back:'Skip −', skip_forward:'Skip +',
+            rewind:'Zurückspulen', fast_forward:'Vorspulen',
+            record:'Aufnahme', info:'Info', source:'Source',
+            num_0:'0', num_1:'1', num_2:'2', num_3:'3', num_4:'4',
+            num_5:'5', num_6:'6', num_7:'7', num_8:'8', num_9:'9',
+            num_minus:'Minus (−)', num_enter:'E (Eingabe)',
+            dvr_1:'DVR', dvr_2:'Guide', dvr_3:'Info (DVR)',
+            red:'Rot', green:'Grün', yellow:'Gelb', blue:'Blau',
+        };
+        return map[btnId] || btnId.toUpperCase().replace(/_/g,' ');
+    }
+
+    _labeled(text, el) {
+        const wrap = document.createElement('div');
+        const lbl  = document.createElement('div');
+        lbl.className = 'lbl'; lbl.textContent = text;
+        wrap.appendChild(lbl); wrap.appendChild(el);
+        return wrap;
+    }
+
+    _patchButton(ctx, btnId, value) {
+        const cfg  = JSON.parse(JSON.stringify(this._config));
+        if (!cfg.buttons)      cfg.buttons      = {};
+        if (!cfg.buttons[ctx]) cfg.buttons[ctx] = {};
+        if (!value) delete cfg.buttons[ctx][btnId];
+        else        cfg.buttons[ctx][btnId] = value;
+        if (ctx !== 'global' && Object.keys(cfg.buttons[ctx]).length === 0) {
+            delete cfg.buttons[ctx];
         }
-        if (sltEd) {
-            sltEd.defaultValue = c.dynamic_slots || {};
-            sltEd.addEventListener('value-changed', e => {
-                if (e.detail && e.detail.isValid !== false) this._up('dynamic_slots', e.detail.value);
-            });
+        this._config = cfg;
+        this._dispatch();
+    }
+
+    _applyAutoMapping(ctx) {
+        if (!this._confData) return;
+        const devices = this._confData.Devices || {};
+        const cfg     = JSON.parse(JSON.stringify(this._config));
+        if (!cfg.buttons)      cfg.buttons      = {};
+        if (!cfg.buttons[ctx]) cfg.buttons[ctx] = {};
+        const ctxBtns = cfg.buttons[ctx];
+        let filled = 0;
+        for (const btnId of this._buttonIds) {
+            if (ctxBtns[btnId]) continue;
+            const raw = HCV2_FALLBACKS[btnId];
+            if (!raw) continue;
+            const candidates = Array.isArray(raw) ? raw : [raw];
+            for (const candidate of candidates) {
+                let found = false;
+                for (const devName in devices) {
+                    const dev = devices[devName];
+                    if (!dev || !Array.isArray(dev.commands)) continue;
+                    if (dev.commands.indexOf(candidate) !== -1) {
+                        ctxBtns[btnId] = 'command:::' + dev.id + ':::' + candidate;
+                        filled++; found = true; break;
+                    }
+                }
+                if (found) break;
+            }
         }
+        this._config = cfg;
+        this._dispatch();
+        this._buildDOM();
     }
 
     _up(key, val) {
-        const cfg = { ...this._config };
+        const cfg = JSON.parse(JSON.stringify(this._config));
         if (val === null || val === undefined || val === '') delete cfg[key];
         else cfg[key] = val;
         this._config = cfg;
+        this._dispatch();
+    }
+
+    _dispatch() {
         this.dispatchEvent(new CustomEvent('config-changed', {
-            detail: { config: cfg }, bubbles: true, composed: true,
+            detail: { config: this._config }, bubbles: true, composed: true,
         }));
     }
 }
