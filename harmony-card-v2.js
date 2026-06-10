@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.1.0';
+const HCV2_VERSION = '2.2.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -548,23 +548,135 @@ class HarmonyCardV2 extends HTMLElement {
         this._sheetRenderCmds(devName);
     }
 
+    // Map a device's full Harmony command list (from the .conf) to logical
+    // remote slots, so the sheet can show a real remote — not just text.
+    _deviceRemoteModel(devName) {
+        const devObj = (this._conf.Devices || {})[devName];
+        if (!devObj) return null;
+        const devId = String(devObj.id);
+        const all   = Array.isArray(devObj.commands) ? devObj.commands : [];
+        const set   = new Set(all);
+        const pick  = (...cands) => cands.find(c => set.has(c)) || null;
+        return {
+            devId, all,
+            power:    pick('PowerToggle'),
+            powerOn:  pick('PowerOn'),
+            powerOff: pick('PowerOff'),
+            volUp:    pick('VolumeUp'),
+            volDown:  pick('VolumeDown'),
+            mute:     pick('Mute'),
+            chUp:     pick('ChannelUp'),
+            chDown:   pick('ChannelDown', 'ChannelPrev'),
+            up:       pick('DirectionUp'),
+            down:     pick('DirectionDown'),
+            left:     pick('DirectionLeft'),
+            right:    pick('DirectionRight'),
+            ok:       pick('OK', 'Select', 'Enter'),
+            source:   pick('Source', 'InputToggle', 'Input'),
+            menu:     pick('Menu'),
+            exit:     pick('Exit'),
+            back:     pick('Return', 'Back'),
+            info:     pick('Info'),
+            guide:    pick('Guide', 'EPG'),
+            home:     pick('SmartHub', 'Home'),
+        };
+    }
+
     _sheetRenderCmds(devName) {
-        const btns = this._btnsForDevice(devName);
         const body = this.shadowRoot.getElementById('hcv2-sh-body');
         if (!body) return;
-        if (!btns.length) {
-            body.innerHTML = `<p class="sh-empty">Keine konfigurierten Befehle für „${_e(devName)}".<br><small>In der Card-Config unter <code>buttons:</code> eintragen.</small></p>`;
+        const m = this._deviceRemoteModel(devName);
+        if (!m) {
+            body.innerHTML = `<p class="sh-empty">Gerät „${_e(devName)}" nicht in der Conf-Datei.</p>`;
             return;
         }
-        const cells = btns.map(b => {
-            const ik = _ICON_FOR_BTN[b.btnId];
-            const ic = ik ? _svg(ik, 22) : (b.btnId === 'record' ? _svg('record', 22) : '');
-            const lbl = b.btnId === 'ok' ? 'OK' : _e(b.cmd);
-            return `<button class="cmd-btn" data-cv="${_e(b.val)}">${ic}<span>${lbl}</span></button>`;
-        }).join('');
-        body.innerHTML = `<div class="cmd-grid">${cells}</div>`;
-        body.querySelectorAll('.cmd-btn').forEach(el => {
+        const cv = (cmd) => _e('command:::' + m.devId + ':::' + cmd);
+        // Remote button — disabled (dimmed) when the command is absent on the device
+        const rb = (cmd, cls, inner) => cmd
+            ? `<button class="${cls}" data-cv="${cv(cmd)}">${inner}</button>`
+            : `<button class="${cls} sr-dis">${inner}</button>`;
+
+        // Power: separate Ein/Aus when both exist, else a single toggle button
+        let powerHtml;
+        if (m.powerOn && m.powerOff) {
+            powerHtml = rb(m.powerOn,  'sr-pill sr-on',  _svg('power', 18) + '<span>Ein</span>')
+                      + rb(m.powerOff, 'sr-pill sr-off', _svg('power', 18) + '<span>Aus</span>');
+        } else {
+            powerHtml = rb(m.power || m.powerOff || m.powerOn, 'sr-pill sr-off',
+                           _svg('power', 18) + '<span>Power</span>');
+        }
+        const sourceHtml = rb(m.source, 'sr-pill sr-src', _svg('source', 18) + '<span>Source</span>');
+
+        // Function row — only the buttons the device actually has
+        const fnHtml = [
+            [m.menu,  'menu',    'Menu'],
+            [m.home,  'devices', 'Home'],
+            [m.guide, 'info',    'Guide'],
+            [m.info,  'info',    'Info'],
+            [m.back,  'back',    'Back'],
+            [m.exit,  'exit',    'Exit'],
+        ].filter(([c]) => c)
+         .map(([c, ic, lbl]) => `<button class="sr-fn" data-cv="${cv(c)}">${_svg(ic, 20)}<span>${lbl}</span></button>`)
+         .join('');
+
+        // Everything else → collapsible "Alle Befehle" grid (nothing gets lost)
+        const used = new Set([
+            m.power, m.powerOn, m.powerOff, m.volUp, m.volDown, m.mute,
+            m.chUp, m.chDown, m.up, m.down, m.left, m.right, m.ok, m.source,
+            m.menu, m.exit, m.back, m.info, m.guide, m.home,
+        ].filter(Boolean));
+        const rest = (m.all || []).filter(c => !used.has(c));
+        const restHtml = rest.map(c => `<button class="sr-gbtn" data-cv="${cv(c)}">${_e(c)}</button>`).join('');
+
+        body.innerHTML = `
+<div class="sr-wrap">
+  <div class="sr-top">
+    <div class="sr-pw-grp">${powerHtml}</div>
+    ${sourceHtml}
+  </div>
+
+  <div class="sr-volch">
+    <div class="sr-rocker">
+      ${rb(m.volUp,   'sr-rb sr-rb-top', _svg('vol_up', 20))}
+      <span class="sr-rk-lbl">VOL</span>
+      ${rb(m.volDown, 'sr-rb sr-rb-bot', _svg('vol_down', 20))}
+    </div>
+    ${m.mute
+        ? `<button class="sr-mute" data-cv="${cv(m.mute)}">${_svg('mute', 22)}<span>Mute</span></button>`
+        : `<button class="sr-mute sr-dis">${_svg('mute', 22)}<span>Mute</span></button>`}
+    ${(m.chUp || m.chDown) ? `
+    <div class="sr-rocker">
+      ${rb(m.chUp,   'sr-rb sr-rb-top', _svg('dir_up', 20))}
+      <span class="sr-rk-lbl">CH</span>
+      ${rb(m.chDown, 'sr-rb sr-rb-bot', _svg('dir_down', 20))}
+    </div>` : ''}
+  </div>
+
+  <div class="sr-dpad">
+    <div class="sr-dp-row">${rb(m.up, 'sr-dp', _svg('dir_up', 28))}</div>
+    <div class="sr-dp-row">
+      ${rb(m.left, 'sr-dp', _svg('dir_left', 28))}
+      ${m.ok ? `<button class="sr-ok" data-cv="${cv(m.ok)}">OK</button>` : `<button class="sr-ok sr-dis">OK</button>`}
+      ${rb(m.right, 'sr-dp', _svg('dir_right', 28))}
+    </div>
+    <div class="sr-dp-row">${rb(m.down, 'sr-dp', _svg('dir_down', 28))}</div>
+  </div>
+
+  ${fnHtml ? `<div class="sr-fnrow">${fnHtml}</div>` : ''}
+
+  ${restHtml ? `
+  <div class="sr-more" id="hcv2-srmore">
+    <button class="sr-more-tg" id="hcv2-srmore-tg">${_svg('numpad', 18)}<span>Alle Befehle (${rest.length})</span><span class="chev">${_svg('chev_down', 18)}</span></button>
+    <div class="sr-grid">${restHtml}</div>
+  </div>` : ''}
+</div>`;
+
+        body.querySelectorAll('[data-cv]').forEach(el => {
             el.addEventListener('click', () => { this._vib(); this._fire(el.dataset.cv); });
+        });
+        const moreTg = body.querySelector('#hcv2-srmore-tg');
+        if (moreTg) moreTg.addEventListener('click', () => {
+            body.querySelector('#hcv2-srmore').classList.toggle('open');
         });
     }
 
@@ -1012,6 +1124,53 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 }
 .cmd-btn:active{background:rgba(0,0,0,.10);}
 .cmd-btn span{max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* Device remote (dark) — same shape as the main remote, darker theme */
+.sr-wrap{
+  background:linear-gradient(160deg,#222a3a 0%,#1a202c 100%);
+  border-radius:24px;padding:16px 14px 20px;margin:2px 0 6px;
+  display:flex;flex-direction:column;align-items:center;gap:13px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 16px rgba(0,0,0,.30);
+}
+.sr-top{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.sr-pw-grp{display:flex;gap:8px;}
+.sr-pill{
+  height:42px;padding:0 15px;border-radius:14px;
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:800;letter-spacing:.3px;
+  background:rgba(255,255,255,.07);color:#e8edf5;transition:background .12s,opacity .1s;
+}
+.sr-pill:active{opacity:.72;}
+.sr-on{background:rgba(34,197,94,.18);color:#4ade80;}
+.sr-off{background:rgba(239,68,68,.18);color:#f87171;}
+.sr-src{background:rgba(96,165,250,.16);color:#93c5fd;}
+.sr-volch{display:flex;align-items:center;justify-content:center;gap:12px;}
+.sr-rocker{display:flex;flex-direction:column;align-items:center;background:rgba(255,255,255,.05);border-radius:20px;overflow:hidden;width:66px;}
+.sr-rb{width:66px;height:42px;display:flex;align-items:center;justify-content:center;color:#e8edf5;transition:background .1s;}
+.sr-rb:active{background:rgba(255,255,255,.12);}
+.sr-rb-top{border-radius:20px 20px 0 0;}.sr-rb-bot{border-radius:0 0 20px 20px;}
+.sr-rk-lbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:#8b97ad;padding:1px 0;line-height:1;}
+.sr-mute{width:58px;height:58px;border-radius:18px;background:rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#e8edf5;font-size:9px;font-weight:700;transition:background .12s;}
+.sr-mute:active{background:rgba(255,255,255,.12);}
+.sr-dpad{display:flex;flex-direction:column;align-items:center;gap:3px;background:rgba(0,0,0,.20);border-radius:26px;padding:8px;width:206px;}
+.sr-dp-row{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;}
+.sr-dp{width:58px;height:56px;border-radius:16px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;color:#e8edf5;transition:background .1s;}
+.sr-dp:active{background:rgba(255,255,255,.14);}
+.sr-ok{width:72px;height:56px;border-radius:18px;background:var(--primary-color,#03a9f4);color:#fff;font-size:16px;font-weight:900;box-shadow:0 3px 12px color-mix(in srgb,var(--primary-color,#03a9f4) 35%,transparent);transition:opacity .1s;}
+.sr-ok:active{opacity:.8;}
+.sr-fnrow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%;}
+.sr-fn{min-width:54px;height:48px;padding:0 10px;border-radius:14px;background:rgba(255,255,255,.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#cdd6e6;font-size:9px;font-weight:700;transition:background .12s;}
+.sr-fn:active{background:rgba(255,255,255,.12);}
+.sr-dis{opacity:.22;pointer-events:none;}
+.sr-more{width:100%;margin-top:2px;}
+.sr-more-tg{display:flex;align-items:center;gap:6px;width:100%;height:42px;padding:0 14px;border-radius:13px;background:rgba(255,255,255,.04);color:#aeb8cc;font-size:12px;font-weight:700;transition:background .12s;}
+.sr-more-tg:active{background:rgba(255,255,255,.10);}
+.sr-more-tg .chev{margin-left:auto;transition:transform .2s;}
+.sr-more.open .chev{transform:rotate(180deg);}
+.sr-grid{display:none;grid-template-columns:repeat(3,1fr);gap:7px;padding-top:8px;}
+.sr-more.open .sr-grid{display:grid;}
+.sr-gbtn{min-height:50px;border-radius:12px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:600;color:#cdd6e6;padding:4px;transition:background .12s;overflow:hidden;word-break:break-word;}
+.sr-gbtn:active{background:rgba(255,255,255,.12);}
 </style>`; }
 
 // ── Sheet Helpers ─────────────────────────────────────────────────────────
