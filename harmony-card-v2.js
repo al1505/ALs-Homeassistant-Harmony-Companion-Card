@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.4.0';
+const HCV2_VERSION = '2.5.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -103,6 +103,10 @@ const HCV2_FALLBACKS = {
     num_enter:['Enter','Select','OK'],
 };
 
+// Per-hub config fields: when a hub is active, these override the top-level config.
+const HCV2_HUB_FIELDS = ['name', 'entity', 'config_file', 'color', 'buttons', 'dynamic_slots'];
+const HCV2_MAX_HUBS   = 5;
+
 // ============================================================================
 
 class HarmonyCardV2 extends HTMLElement {
@@ -112,6 +116,8 @@ class HarmonyCardV2 extends HTMLElement {
         this.attachShadow({ mode: 'open' });
         this._hass       = null;
         this.config      = null;
+        this._origConfig = null;   // master config before active-hub merge
+        this._activeHubIndex = 0;  // which hub is currently shown
         this._conf       = { Devices: {}, Activities: {} };
         this._lastAct    = null;
         this._rendered   = false;
@@ -173,9 +179,115 @@ class HarmonyCardV2 extends HTMLElement {
     }
 
     setConfig(cfg) {
-        if (!cfg || !cfg.entity) throw new Error('harmony-card-v2: entity required');
-        this.config = JSON.parse(JSON.stringify(cfg));
+        if (!cfg) throw new Error('harmony-card-v2: config required');
+        const hasEntity = !!cfg.entity;
+        const hasHubs   = Array.isArray(cfg.hubs) && cfg.hubs.length && cfg.hubs[0] && cfg.hubs[0].entity;
+        if (!hasEntity && !hasHubs) throw new Error('harmony-card-v2: entity (or hubs[].entity) required');
+        this._origConfig = JSON.parse(JSON.stringify(cfg));
+        // Restore last-used hub: localStorage > config.active_hub > 0
+        try {
+            const stored = localStorage.getItem('hcv2_active_hub');
+            this._activeHubIndex = (stored !== null) ? (parseInt(stored, 10) || 0) : (Number(cfg.active_hub) || 0);
+        } catch (e) { this._activeHubIndex = Number(cfg.active_hub) || 0; }
+        this._applyActiveHub();
         this._loadConf();
+    }
+
+    // ── Multi-hub ──────────────────────────────────────────────────────────────
+
+    _getHubs() {
+        const c = this._origConfig || this.config || {};
+        if (Array.isArray(c.hubs) && c.hubs.length) return c.hubs.slice(0, HCV2_MAX_HUBS);
+        return [this._buildLegacyHub(c)];   // single-hub (legacy) config
+    }
+
+    _buildLegacyHub(c) {
+        const hub = { name: c.name || 'Hub' };
+        HCV2_HUB_FIELDS.forEach(f => { if (c[f] !== undefined) hub[f] = c[f]; });
+        return hub;
+    }
+
+    _currentHub() {
+        const hubs = this._getHubs();
+        const idx  = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
+        return hubs[idx] || {};
+    }
+
+    // Merge the active hub's fields onto a fresh clone of the master config.
+    _applyActiveHub() {
+        const cfg  = JSON.parse(JSON.stringify(this._origConfig || {}));
+        const hubs = this._getHubs();
+        const idx  = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
+        const hub  = hubs[idx] || {};
+        HCV2_HUB_FIELDS.forEach(f => { if (hub[f] !== undefined) cfg[f] = hub[f]; });
+        this.config = cfg;
+    }
+
+    _isHubOnline(hub) {
+        if (!this._hass || !hub || !hub.entity) return false;
+        const st = this._hass.states[hub.entity];
+        return !!st && st.state !== 'unavailable' && st.state !== 'unknown';
+    }
+
+    _switchToHub(idx) {
+        const hubs = this._getHubs();
+        if (!hubs.length) return;
+        const n = Math.max(0, Math.min(hubs.length - 1, idx));
+        this._closeHubDd();
+        if (n === this._activeHubIndex) return;
+        this._activeHubIndex = n;
+        try { localStorage.setItem('hcv2_active_hub', String(n)); } catch (e) {}
+        this._applyActiveHub();
+        // Reset per-hub state, then reload the new hub's conf (re-renders)
+        this._conf    = { Devices: {}, Activities: {} };
+        this._lastAct = null;
+        this._playing = false;
+        this._loadConf();
+    }
+
+    _cycleHub(dir) {
+        const hubs = this._getHubs();
+        if (hubs.length < 2) return;
+        let n = (this._activeHubIndex || 0) + dir;
+        if (n < 0) n = hubs.length - 1;
+        if (n >= hubs.length) n = 0;
+        this._switchToHub(n);
+    }
+
+    _closeHubDd() {
+        const cur = this.shadowRoot && this.shadowRoot.getElementById('hcv2-hub-current');
+        if (cur) cur.classList.remove('open');
+    }
+
+    _renderHubBar() {
+        const root = this.shadowRoot;
+        const bar  = root && root.getElementById('hcv2-hubbar');
+        if (!bar) return;                       // flat skin only
+        const hubs = this._getHubs();
+        if (hubs.length < 2) { bar.style.display = 'none'; return; }
+        bar.style.display = '';
+        const idx = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
+        const hub = hubs[idx] || {};
+        const nameEl = root.getElementById('hcv2-hub-name');
+        if (nameEl) nameEl.textContent = hub.name || ('Hub ' + (idx + 1));
+        const dot = root.getElementById('hcv2-hub-dot');
+        if (dot) {
+            const online = this._isHubOnline(hub);
+            dot.classList.toggle('online', online);
+            dot.classList.toggle('offline', !online);
+        }
+        // Rebuild dropdown only while closed (avoids click races)
+        const cur = root.getElementById('hcv2-hub-current');
+        const dd  = root.getElementById('hcv2-hub-dd');
+        if (dd && cur && !cur.classList.contains('open')) {
+            dd.innerHTML = hubs.map((h, i) => {
+                const on = this._isHubOnline(h);
+                return `<div class="hub-dd-item${i === idx ? ' active' : ''}" data-hub="${i}">
+                    <span class="hub-dot ${on ? 'online' : 'offline'}"></span>
+                    <span>${_e(h.name || ('Hub ' + (i + 1)))}</span>
+                </div>`;
+            }).join('');
+        }
     }
 
     set hass(hass) {
@@ -310,6 +422,18 @@ class HarmonyCardV2 extends HTMLElement {
     <button class="flt-circ flt-pwr" data-btn="off">${_svg('power',20)}</button>
     <div class="flt-st" id="hcv2-status"></div>
     <button class="flt-circ" id="hcv2-devbtn">${_svg('devices',20)}</button>
+  </div>
+
+  <!-- Hub bar (multi-hub; hidden when < 2 hubs) -->
+  <div class="hub-bar" id="hcv2-hubbar" style="display:none">
+    <button class="hub-arrow" id="hcv2-hub-prev">${_svg('chev_left',18)}</button>
+    <div class="hub-current" id="hcv2-hub-current">
+      <span class="hub-dot" id="hcv2-hub-dot"></span>
+      <span class="hub-name" id="hcv2-hub-name">—</span>
+      <span class="hub-caret">${_svg('chev_down',16)}</span>
+      <div class="hub-dropdown" id="hcv2-hub-dd" role="menu"></div>
+    </div>
+    <button class="hub-arrow" id="hcv2-hub-next">${_svg('dir_right',18)}</button>
   </div>
 
   <!-- Activity pills -->
@@ -450,6 +574,9 @@ class HarmonyCardV2 extends HTMLElement {
         if (dispAct) dispAct.textContent = isOn ? current : 'Kein Gerät aktiv';
         if (dispDot) dispDot.classList.toggle('disp-dot--on', isOn);
 
+        // Hub bar (name + online dots)
+        this._renderHubBar();
+
         // Reset play/pause button icon on activity change
         const pp = root.getElementById('hcv2-pp');
         if (pp) pp.innerHTML = _svg(this._playing ? 'pause' : 'play', 28);
@@ -507,6 +634,25 @@ class HarmonyCardV2 extends HTMLElement {
                 activity: pill.dataset.act,
             }).catch(() => {});
         });
+
+        // Hub bar: prev/next arrows, dropdown toggle, dropdown item select
+        root.getElementById('hcv2-hub-prev')?.addEventListener('click', e => { e.stopPropagation(); this._vib(); this._cycleHub(-1); });
+        root.getElementById('hcv2-hub-next')?.addEventListener('click', e => { e.stopPropagation(); this._vib(); this._cycleHub(+1); });
+        const hubCur = root.getElementById('hcv2-hub-current');
+        if (hubCur) {
+            hubCur.addEventListener('click', e => {
+                if (e.target.closest('.hub-dd-item')) return;   // item click handled below
+                this._vib();
+                hubCur.classList.toggle('open');
+            });
+            root.getElementById('hcv2-hub-dd')?.addEventListener('click', e => {
+                const item = e.target.closest('.hub-dd-item');
+                if (!item) return;
+                e.stopPropagation();
+                this._vib();
+                this._switchToHub(parseInt(item.dataset.hub, 10));
+            });
+        }
 
         // Device Quick Sheet open
         root.getElementById('hcv2-devbtn').addEventListener('click', () => { this._vib(); this._sheetOpen(); });
@@ -1061,6 +1207,24 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .pill--on{background:var(--primary-color,#03a9f4);color:#fff;box-shadow:0 2px 8px color-mix(in srgb,var(--primary-color,#03a9f4) 35%,transparent);}
 .pill:active{opacity:.75;}
 .pill-empty{font-size:12px;color:var(--secondary-text-color,#999);padding:0 4px;}
+
+/* Hub bar (multi-hub switcher) */
+.hub-bar{width:100%;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.05);border-radius:14px;padding:5px 8px;}
+.hub-arrow{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.06);color:var(--secondary-text-color,#666);flex-shrink:0;transition:background .12s;}
+.hub-arrow:active{background:rgba(0,0,0,.14);}
+.hub-current{flex:1;position:relative;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;height:30px;border-radius:10px;transition:background .12s;}
+.hub-current:active{background:rgba(0,0,0,.06);}
+.hub-dot{width:8px;height:8px;border-radius:50%;background:#94a3b8;flex-shrink:0;}
+.hub-dot.online{background:#22c55e;}
+.hub-dot.offline{background:#ef4444;}
+.hub-name{font-size:13px;font-weight:700;color:var(--primary-text-color,#333);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;}
+.hub-caret{display:flex;color:var(--secondary-text-color,#888);transition:transform .2s;}
+.hub-current.open .hub-caret{transform:rotate(180deg);}
+.hub-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card-background-color,#fff);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.3),0 0 0 1px var(--divider-color,rgba(0,0,0,.1));max-height:240px;overflow-y:auto;z-index:40;display:none;padding:4px;}
+.hub-current.open .hub-dropdown{display:block;}
+.hub-dd-item{display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary-text-color,#333);transition:background .12s;}
+.hub-dd-item:active{background:rgba(0,0,0,.06);}
+.hub-dd-item.active{background:rgba(3,169,244,.14);}
 
 /* Status */
 .st-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
