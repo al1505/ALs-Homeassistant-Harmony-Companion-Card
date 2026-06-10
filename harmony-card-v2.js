@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.3.0';
+const HCV2_VERSION = '2.4.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -116,9 +116,46 @@ class HarmonyCardV2 extends HTMLElement {
         this._lastAct    = null;
         this._rendered   = false;
         this._numOpen    = false;
+        this._numTimer   = null;   // auto-close timer for the numpad overlay
+        this._onResize   = null;   // window resize handler (auto-fit)
         this._playing    = false;  // play/pause toggle state
         this._sheetMode  = null;   // null | 'devices' | 'commands'
         this._sheetDev   = null;
+    }
+
+    connectedCallback() {
+        if (!this._onResize) {
+            this._onResize = () => this._fitRemote();
+            window.addEventListener('resize', this._onResize, { passive: true });
+        }
+        if (this._rendered) this._fitRemote();
+    }
+
+    disconnectedCallback() {
+        if (this._onResize) {
+            window.removeEventListener('resize', this._onResize);
+            this._onResize = null;
+        }
+        if (this._numTimer) { clearTimeout(this._numTimer); this._numTimer = null; }
+    }
+
+    // Auto-fit the flat remote into the visible area (Pixel 8 Pro etc.):
+    // scale = min(availWidth / naturalWidth, availHeight / naturalHeight).
+    // Guarantees the whole remote is visible regardless of which zones are active.
+    _fitRemote() {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const el = root.querySelector('.flt-remote');
+        if (!el) return;                 // auto-fit applies to the flat skin only
+        el.style.zoom = '1';             // measure unscaled
+        const nW = el.offsetWidth, nH = el.offsetHeight;
+        if (!nW || !nH) return;
+        const rect   = this.getBoundingClientRect();
+        const availW = this.clientWidth || rect.width || window.innerWidth || 448;
+        const vh     = window.innerHeight || document.documentElement.clientHeight || 900;
+        const availH = Math.max(140, vh - rect.top - 8);
+        const scale  = Math.min(availW / nW, availH / nH);
+        el.style.zoom = String(Math.max(0.5, Math.min(scale, 2.4)));
     }
 
     static getStubConfig() {
@@ -427,6 +464,11 @@ class HarmonyCardV2 extends HTMLElement {
             vis('hcv2-t1',       this._zoneOn(['skip_back','rewind','play','pause','stop','fast_forward','skip_forward']));
             vis('hcv2-num',      this._zoneOn(['num_1','num_2','num_3','num_4','num_5','num_6','num_7','num_8','num_9','num_0','num_minus','num_enter']));
         }
+        // Re-fit: active zones (and thus the remote height) just changed
+        this._fitRemote();
+        if (!this._fitRaf) {
+            this._fitRaf = requestAnimationFrame(() => { this._fitRaf = null; this._fitRemote(); });
+        }
     }
 
     // ── Events ───────────────────────────────────────────────────────────────
@@ -440,7 +482,11 @@ class HarmonyCardV2 extends HTMLElement {
             if (!btn) return;
             e.stopPropagation();
             this._vib();
-            this._doCmd(btn.dataset.btn);
+            const id = btn.dataset.btn;
+            this._doCmd(id);
+            // Numpad UX: OK closes it immediately, any digit re-arms the 5s auto-close
+            if (id === 'num_enter')               this._closeNum();
+            else if (id && id.indexOf('num_') === 0) this._armNumTimer();
         });
 
         // Status row power button (rendered dynamically — use delegation on status row)
@@ -480,15 +526,36 @@ class HarmonyCardV2 extends HTMLElement {
             e.currentTarget.innerHTML = _svg(this._playing ? 'pause' : 'play', 28);
         });
 
-        // Numpad toggle (flat skin: hcv2-chev; all skins: hcv2-numgrid + .open class on button)
-        root.getElementById('hcv2-numtgl')?.addEventListener('click', e => {
+        // Numpad toggle — opens the upward overlay, OK or 5s inactivity closes it
+        root.getElementById('hcv2-numtgl')?.addEventListener('click', () => {
             this._vib();
-            this._numOpen = !this._numOpen;
-            root.getElementById('hcv2-numgrid')?.classList.toggle('open', this._numOpen);
-            const chev = root.getElementById('hcv2-chev');
-            if (chev) chev.style.transform = this._numOpen ? 'rotate(180deg)' : '';
-            e.currentTarget.classList.toggle('open', this._numOpen);
+            if (this._numOpen) this._closeNum(); else this._openNum();
         });
+    }
+
+    _openNum() {
+        const root = this.shadowRoot;
+        this._numOpen = true;
+        root.getElementById('hcv2-numgrid')?.classList.add('open');
+        root.getElementById('hcv2-numtgl')?.classList.add('open');
+        const chev = root.getElementById('hcv2-chev');
+        if (chev) chev.style.transform = 'rotate(180deg)';
+        this._armNumTimer();
+    }
+
+    _closeNum() {
+        const root = this.shadowRoot;
+        this._numOpen = false;
+        root.getElementById('hcv2-numgrid')?.classList.remove('open');
+        root.getElementById('hcv2-numtgl')?.classList.remove('open');
+        const chev = root.getElementById('hcv2-chev');
+        if (chev) chev.style.transform = '';
+        if (this._numTimer) { clearTimeout(this._numTimer); this._numTimer = null; }
+    }
+
+    _armNumTimer() {
+        if (this._numTimer) clearTimeout(this._numTimer);
+        this._numTimer = setTimeout(() => this._closeNum(), 5000);
     }
 
     // ── Sheet ─────────────────────────────────────────────────────────────────
@@ -968,15 +1035,15 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .card{background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:var(--ha-card-border-radius,12px);padding:0;}
 
 /* Remote body — physical frame.
-   zoom scales the whole remote (buttons, gaps, fonts) proportionally to fill
-   the Pixel 8 Pro width (448px CSS @ DPR 3): 272 * 1.62 ≈ 440px, near edge-to-edge. */
+   The zoom is set dynamically by _fitRemote() so the whole remote always fits
+   the visible area (width AND height) on the Pixel 8 Pro. Compact vertical
+   rhythm (small gaps/padding) lets it scale wider before the height runs out. */
 .flt-remote{
   background:var(--secondary-background-color,#f0f0f2);
   border-radius:28px;
   max-width:272px;margin:0 auto;
-  zoom:1.62;
-  padding:16px 14px 22px;
-  display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:12px 12px 14px;
+  display:flex;flex-direction:column;align-items:center;gap:7px;
   box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.10)),inset 0 1px 0 rgba(255,255,255,.4);
 }
 
@@ -1045,15 +1112,25 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .tp-play:active{background:rgba(3,169,244,.16);}
 .tp-stop{background:rgba(0,0,0,.05);}
 
-/* Numpad */
-.num-section{display:flex;flex-direction:column;gap:0;width:100%;}
+/* Numpad — opens UPWARD as a floating overlay (no layout growth, no scroll) */
+.num-section{position:relative;display:flex;flex-direction:column;gap:0;width:100%;}
 .num-toggle{display:flex;align-items:center;gap:6px;height:44px;padding:0 14px;border-radius:13px;background:rgba(0,0,0,.04);font-size:13px;font-weight:600;color:var(--secondary-text-color,#666);transition:background .12s;width:100%;}
 .num-toggle:active{background:rgba(0,0,0,.10);}
+.num-toggle.open{background:rgba(0,0,0,.10);}
 .chev{margin-left:auto;transition:transform .2s;}
-.num-grid{display:none;grid-template-columns:repeat(3,1fr);gap:6px;padding-top:8px;}
-.num-grid.open{display:grid;}
-.num-btn{height:54px;border-radius:13px;background:rgba(0,0,0,.04);font-size:19px;font-weight:700;color:var(--primary-text-color,#333);transition:background .1s;}
-.num-btn:active{background:rgba(0,0,0,.10);}
+.num-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
+  position:absolute;left:0;right:0;bottom:calc(100% + 6px);
+  background:var(--secondary-background-color,#f0f0f2);
+  padding:10px;border-radius:16px;
+  box-shadow:0 -8px 24px rgba(0,0,0,.28),0 0 0 1px var(--divider-color,rgba(0,0,0,.10));
+  opacity:0;visibility:hidden;transform:translateY(8px);
+  transition:opacity .18s ease,transform .18s ease,visibility .18s;
+  z-index:30;
+}
+.num-grid.open{opacity:1;visibility:visible;transform:translateY(0);}
+.num-btn{height:54px;border-radius:13px;background:rgba(0,0,0,.06);font-size:19px;font-weight:700;color:var(--primary-text-color,#333);transition:background .1s;}
+.num-btn:active{background:rgba(0,0,0,.12);}
 
 /* Device Quick Sheet */
 .sh-overlay{
