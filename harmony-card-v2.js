@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.2.1';
+const HCV2_VERSION = '2.3.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -965,13 +965,16 @@ ${this._numpadCss()}</style>`; }
 button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;}
 
 /* Outer card — thin wrapper */
-.card{background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:var(--ha-card-border-radius,12px);padding:8px;}
+.card{background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:var(--ha-card-border-radius,12px);padding:0;}
 
-/* Remote body — physical frame */
+/* Remote body — physical frame.
+   zoom scales the whole remote (buttons, gaps, fonts) proportionally to fill
+   the Pixel 8 Pro width (448px CSS @ DPR 3): 272 * 1.62 ≈ 440px, near edge-to-edge. */
 .flt-remote{
   background:var(--secondary-background-color,#f0f0f2);
   border-radius:28px;
   max-width:272px;margin:0 auto;
+  zoom:1.62;
   padding:16px 14px 22px;
   display:flex;flex-direction:column;align-items:center;gap:10px;
   box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.10)),inset 0 1px 0 rgba(255,255,255,.4);
