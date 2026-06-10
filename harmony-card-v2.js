@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.2.0';
+const HCV2_VERSION = '2.2.1';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -933,11 +933,11 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .ftv-noapps{font-size:11px;color:#404050;}
 .conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
 
-.sh-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;pointer-events:none;}
+.sh-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:0 12px;pointer-events:none;}
 .sh-overlay.open{pointer-events:all;}
 .sh-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s;}
 .sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.45);}
-.sh-panel{position:relative;width:100%;max-height:72vh;background:var(--ha-card-background,var(--card-background-color,#1e1e24));border-radius:24px 24px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+.sh-panel{position:relative;width:100%;max-width:320px;max-height:72vh;margin:0 auto 14px;background:var(--ha-card-background,var(--card-background-color,#1e1e24));border-radius:26px;display:flex;flex-direction:column;transform:translateY(120%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 12px 40px rgba(0,0,0,.55);}
 .sh-overlay.open .sh-panel{transform:translateY(0);}
 .sh-handle{width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);align-self:center;margin:10px 0 0;flex-shrink:0;}
 .sh-head{display:flex;align-items:center;padding:8px 8px 12px;gap:4px;flex-shrink:0;}
@@ -1055,7 +1055,8 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 /* Device Quick Sheet */
 .sh-overlay{
   position:fixed;inset:0;z-index:9999;
-  display:flex;align-items:flex-end;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0 12px;
   pointer-events:none;
 }
 .sh-overlay.open{pointer-events:all;}
@@ -1066,13 +1067,15 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 }
 .sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.38);}
 .sh-panel{
-  position:relative;width:100%;max-height:72vh;
+  position:relative;width:100%;max-width:320px;max-height:72vh;
+  margin:0 auto 14px;
   background:var(--ha-card-background,var(--card-background-color,#fff));
-  border-radius:24px 24px 0 0;
+  border-radius:26px;
   display:flex;flex-direction:column;
-  transform:translateY(100%);
+  transform:translateY(120%);
   transition:transform .28s cubic-bezier(.4,0,.2,1);
   overflow:hidden;
+  box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.12)),0 12px 40px rgba(0,0,0,.40);
 }
 .sh-overlay.open .sh-panel{transform:translateY(0);}
 .sh-handle{
@@ -1189,11 +1192,11 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 </div>`; }
 
     _sheetCss() { return `
-.sh-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;pointer-events:none;}
+.sh-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:0 12px;pointer-events:none;}
 .sh-overlay.open{pointer-events:all;}
 .sh-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0);transition:background .25s;}
 .sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.42);}
-.sh-panel{position:relative;width:100%;max-height:72vh;background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:24px 24px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+.sh-panel{position:relative;width:100%;max-width:320px;max-height:72vh;margin:0 auto 14px;background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:26px;display:flex;flex-direction:column;transform:translateY(120%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden;box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.12)),0 12px 40px rgba(0,0,0,.40);}
 .sh-overlay.open .sh-panel{transform:translateY(0);}
 .sh-handle{width:40px;height:4px;border-radius:2px;background:rgba(0,0,0,.12);align-self:center;margin:10px 0 0;flex-shrink:0;}
 .sh-head{display:flex;align-items:center;padding:8px 8px 12px;gap:4px;flex-shrink:0;}
