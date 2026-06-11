@@ -2,7 +2,7 @@
 // ALs HARMONY CARD V2
 // Mobile-first HA custom card for Logitech Harmony Hub
 // Pixel 8 Pro · Device Quick Sheet · No editor · Same config schema as V1
-// Version: 2.7.0
+// Version: 2.8.0
 // ============================================================================
 // SETUP:
 //   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.7.0';
+const HCV2_VERSION = '2.8.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -195,6 +195,76 @@ const HCV2_HUB_FIELDS = [
     'buttons', 'dynamic_slots',
 ];
 const HCV2_MAX_HUBS   = 5;
+
+// Layout-editor grid snap constants (match V1)
+const HCV2_COL_W = 5;
+const HCV2_ROW_H = 3;
+const HCV2_PBAR_H = 4;
+
+// Hub color palette (one color per hub, cycles)
+const HCV2_HUB_COLORS = [
+    '#03a9f4',  // blue  (hub 1)
+    '#27ae60',  // green
+    '#e67e22',  // orange
+    '#9b59b6',  // purple
+    '#e74c3c',  // red
+];
+function hcv2HubColor(hub, idx) {
+    return (hub && hub.color) || HCV2_HUB_COLORS[(idx || 0) % HCV2_HUB_COLORS.length];
+}
+
+// Element catalog for the layout editor
+const HCV2_ELEM_CATALOG = {
+    power:    { label: 'Power',    w: 25,  h: 24, color: '#b52929', fg: '#fff' },
+    menu:     { label: 'Menü',     w: 25,  h: 24, color: '#16a085', fg: '#fff' },
+    logo_xl:  { label: 'Logo XL',  w: 70,  h: 48, color: '#1a3a99', fg: '#fff' },
+    logo_l:   { label: 'Logo L',   w: 60,  h: 36, color: '#2255aa', fg: '#fff' },
+    logo_m:   { label: 'Logo M',   w: 50,  h: 33, color: '#3366bb', fg: '#fff' },
+    logo_s:   { label: 'Logo S',   w: 35,  h: 27, color: '#4477cc', fg: '#fff' },
+    activity: { label: 'Activity', w: 80,  h: 9,  color: '#dd7700', fg: '#fff' },
+    channel:  { label: 'Sender',   w: 160, h: 18, color: '#1a6633', fg: '#fff' },
+    title:    { label: 'Titel',    w: 200, h: 15, color: '#7a1f5a', fg: '#fff' },
+    time:     { label: 'Zeit',     w: 35,  h: 9,  color: '#e8cc00', fg: '#111' },
+    timespan: { label: 'Beg-End',  w: 65,  h: 9,  color: '#b8a000', fg: '#fff' },
+    panel:    { label: 'Panel',    w: 20,  h: 20, color: '#404040', fg: '#fff' },
+    line:     { label: 'Linie',    w: 50,  h: 2,  color: '#888888', fg: '#fff' },
+};
+
+// Available elements per display mode (palette order)
+const HCV2_MODE_ELEMS = {
+    tv:    ['power', 'menu', 'panel', 'line', 'logo_xl', 'logo_l', 'logo_m', 'logo_s', 'activity', 'channel', 'title', 'time', 'timespan'],
+    media: ['power', 'menu', 'panel', 'line', 'activity', 'title', 'time', 'timespan'],
+};
+
+// Returns catalog entry for a given layout key
+function hcv2CatalogFor(layoutKey, def) {
+    if (layoutKey === 'logo') {
+        const h = (def && def.h) || 0;
+        if (h >= 42) return HCV2_ELEM_CATALOG.logo_xl;
+        if (h >= 35) return HCV2_ELEM_CATALOG.logo_l;
+        if (h >= 30) return HCV2_ELEM_CATALOG.logo_m;
+        return HCV2_ELEM_CATALOG.logo_s;
+    }
+    if (hcv2IsPanel(layoutKey)) return HCV2_ELEM_CATALOG.panel;
+    if (hcv2IsLine(layoutKey))  return HCV2_ELEM_CATALOG.line;
+    return HCV2_ELEM_CATALOG[layoutKey] || null;
+}
+
+// Font families for the layout editor text-element dropdown
+const HCV2_FONT_FAMILIES = [
+    { value: '',                                  label: 'Standard (vom Theme)' },
+    { value: 'Arial, sans-serif',                 label: 'Arial' },
+    { value: 'Helvetica, sans-serif',             label: 'Helvetica' },
+    { value: 'Roboto, sans-serif',                label: 'Roboto' },
+    { value: 'Verdana, sans-serif',               label: 'Verdana' },
+    { value: 'Tahoma, sans-serif',                label: 'Tahoma' },
+    { value: 'Trebuchet MS, sans-serif',          label: 'Trebuchet MS' },
+    { value: '"Times New Roman", serif',          label: 'Times New Roman' },
+    { value: 'Georgia, serif',                    label: 'Georgia' },
+    { value: '"Courier New", monospace',          label: 'Courier New' },
+    { value: 'monospace',                         label: 'Monospace' },
+    { value: '"Segoe UI", system-ui, sans-serif', label: 'Segoe UI' },
+];
 
 // ============================================================================
 
@@ -3044,23 +3114,28 @@ class HarmonyCardV2Editor extends HTMLElement {
         this._hass           = null;
         this._cmdOptions     = [];
         this._contextOptions = [{ label: 'Globale Standardbelegung', value: 'global' }];
+        this._activitiesList = [];
         this._currentContext = 'global';
+        this._currentAutoDevice = '';
         this._confData       = null;
         this._loading        = false;
         this._loaded         = false;
         this._loadError      = null;
         this._openSections   = new Set(['sec-hub']);
+        this._edActiveHub    = 0;
+        this._slotCounts     = { act: null, bot: null };
+        this._leMode         = 'tv';
+        this._leLayouts      = {};
         this._buttonIds = [
+            'dvr_1','dvr_2','dvr_3',
+            'red','green','yellow','blue',
             'exit','menu','back','ok',
             'dir_up','dir_down','dir_left','dir_right',
             'vol_up','vol_down','mute','ch_up','ch_down',
-            'play','pause','stop',
-            'skip_back','skip_forward','rewind','fast_forward','record',
-            'info','source',
+            'skip_back','rewind','play','pause','fast_forward','skip_forward',
+            'record','stop',
             'num_1','num_2','num_3','num_4','num_5','num_6',
             'num_7','num_8','num_9','num_0','num_minus','num_enter',
-            'dvr_1','dvr_2','dvr_3',
-            'red','green','yellow','blue',
         ];
     }
 
@@ -3073,6 +3148,7 @@ class HarmonyCardV2Editor extends HTMLElement {
     setConfig(config) {
         this._config = JSON.parse(JSON.stringify(config || {}));
         if (!this._config.buttons) this._config.buttons = { global: {} };
+        if (!this._leLayouts) this._leLayouts = {};
 
         // Preserve open/closed state of sections before rebuild
         this.shadowRoot.querySelectorAll('details').forEach(d => {
@@ -3087,8 +3163,20 @@ class HarmonyCardV2Editor extends HTMLElement {
             .catch(() => { this._loading = false; this._loaded = true; this._buildDOM(); });
     }
 
+    // Editor display-canvas size (mirrors HarmonyCardV2._dispW/_dispH)
+    get _dispW() {
+        const o = this._config && Number(this._config.display_offset_w);
+        return HCV2_BASE_W + (Number.isFinite(o) ? o : HCV2_DEFAULT_OFFSET_W);
+    }
+    get _dispH() {
+        const o = this._config && Number(this._config.display_offset_h);
+        return HCV2_BASE_H + (Number.isFinite(o) ? o : HCV2_DEFAULT_OFFSET_H);
+    }
+
     async _fetchConf() {
-        const url = this._config.config_file || '/local/harmony_12563120.conf';
+        // Use the active hub's config_file if available
+        const hub = this._edCurrentHub();
+        const url = hub.config_file || this._config.config_file || '/local/harmony_12563120.conf';
         this._loadError = null;
         try {
             const res = await fetch(url, { cache: 'no-store' });
@@ -3097,12 +3185,18 @@ class HarmonyCardV2Editor extends HTMLElement {
             this._confData       = data;
             this._cmdOptions     = [];
             this._contextOptions = [{ label: 'Globale Standardbelegung', value: 'global' }];
+            this._activitiesList = [];
+            // Reset device filter if device no longer exists in new conf
+            if (this._currentAutoDevice && !(data.Devices && data.Devices[this._currentAutoDevice])) {
+                this._currentAutoDevice = '';
+            }
 
             if (data.Activities) {
                 const ids = Object.keys(data.Activities).filter(id => id !== '-1');
-                ids.sort((a, b) => { const an=parseInt(a),bn=parseInt(b); return(isNaN(an)||isNaN(bn))?String(a).localeCompare(String(b)):an-bn; });
+                ids.sort((a, b) => { const an=parseInt(a,10),bn=parseInt(b,10); return(isNaN(an)||isNaN(bn))?String(a).localeCompare(String(b)):an-bn; });
                 ids.forEach(id => {
                     const name = data.Activities[id];
+                    this._activitiesList.push({ name, actionValue: 'activity:::' + name });
                     this._cmdOptions.push({ label: name + ' (Aktivität)', value: 'activity:::' + name });
                     this._contextOptions.push({ label: 'Aktion: ' + name, value: name });
                 });
@@ -3120,6 +3214,98 @@ class HarmonyCardV2Editor extends HTMLElement {
         } catch (err) {
             this._loadError = 'Conf nicht geladen: ' + url + ' — Datei nach /config/www/ kopieren.';
         }
+    }
+
+    // ---- Multi-hub helpers ----
+
+    _edGetHubs() {
+        const c = this._config || {};
+        if (Array.isArray(c.hubs) && c.hubs.length > 0) return c.hubs.slice(0, HCV2_MAX_HUBS);
+        if (c.entity || c.config_file) {
+            const hub = { name: 'Hub' };
+            HCV2_HUB_FIELDS.forEach(f => { if (c[f] !== undefined) hub[f] = c[f]; });
+            return [hub];
+        }
+        return [{ name: 'Hub 1', entity: '', config_file: '/local/harmony.conf' }];
+    }
+
+    _edPatchHub(idx, field, value) {
+        const hubs = this._edGetHubs().slice();
+        const cur  = { ...(hubs[idx] || {}) };
+        if (value === '' || value == null) delete cur[field];
+        else cur[field] = value;
+        hubs[idx] = cur;
+        this._up('hubs', hubs);
+    }
+
+    _edCurrentHubIdx() {
+        const c = this._config || {};
+        if (Array.isArray(c.hubs) && c.hubs.length > 0) {
+            return Math.max(0, Math.min(c.hubs.length - 1, this._edActiveHub || 0));
+        }
+        return -1;
+    }
+
+    _edCurrentHub() {
+        const c = this._config || {};
+        const idx = this._edCurrentHubIdx();
+        if (idx < 0) return c;   // legacy single-hub: top-level is the hub
+        return c.hubs[idx] || {};
+    }
+
+    _edSetHubField(field, value) {
+        if (this._edCurrentHubIdx() < 0) {
+            const next = JSON.parse(JSON.stringify(this._config || {}));
+            if (value === '' || value == null) delete next[field];
+            else next[field] = value;
+            this._config = next; this._dispatch();
+        } else {
+            this._edPatchHub(this._edCurrentHubIdx(), field, value);
+        }
+    }
+
+    _edTransformHubField(field, transformer) {
+        if (this._edCurrentHubIdx() < 0) {
+            const next = JSON.parse(JSON.stringify(this._config || {}));
+            const newVal = transformer(next[field]);
+            if (newVal === undefined || newVal === null ||
+                (typeof newVal === 'object' && !Array.isArray(newVal) && Object.keys(newVal).length === 0) ||
+                (Array.isArray(newVal) && newVal.length === 0)) {
+                delete next[field];
+            } else {
+                next[field] = newVal;
+            }
+            this._config = next; this._dispatch();
+        } else {
+            const idx  = this._edCurrentHubIdx();
+            const hubs = JSON.parse(JSON.stringify((this._config && this._config.hubs) || []));
+            if (!hubs[idx]) hubs[idx] = {};
+            const newVal = transformer(hubs[idx][field]);
+            if (newVal === undefined || newVal === null ||
+                (typeof newVal === 'object' && !Array.isArray(newVal) && Object.keys(newVal).length === 0) ||
+                (Array.isArray(newVal) && newVal.length === 0)) {
+                delete hubs[idx][field];
+            } else {
+                hubs[idx][field] = newVal;
+            }
+            this._up('hubs', hubs);
+        }
+    }
+
+    // Banner shown inside per-hub sections to indicate which hub is being edited
+    _edHubBanner() {
+        const c = this._config || {};
+        if (!Array.isArray(c.hubs) || c.hubs.length < 2) return null;
+        const idx   = this._edCurrentHubIdx();
+        const hub   = c.hubs[idx] || {};
+        const color = hcv2HubColor(hub, idx);
+        const banner = document.createElement('div');
+        banner.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;margin-bottom:10px;background:${color}22;border-left:3px solid ${color};border-radius:4px;font-size:12px;`;
+        const s1 = document.createElement('span'); s1.style.fontWeight = '600'; s1.textContent = 'Bearbeitet Hub:';
+        const s2 = document.createElement('span'); s2.textContent = hub.name || 'Hub ' + (idx + 1);
+        const s3 = document.createElement('span'); s3.style.opacity = '0.6'; s3.textContent = '(Auswahl unter Hub-Konfiguration)';
+        banner.appendChild(s1); banner.appendChild(s2); banner.appendChild(s3);
+        return banner;
     }
 
     _buildDOM() {
@@ -3142,13 +3328,18 @@ details[open] .chev{transform:rotate(90deg);}
 .auto-btn{background:var(--secondary-background-color,#e8e8e8);color:var(--primary-text-color);border:1px solid var(--divider-color,#ccc);border-radius:4px;padding:8px 14px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px;font-size:13px;}
 .auto-btn:hover{background:var(--primary-color,#03a9f4);color:#fff;}
 .err{padding:12px;border-radius:6px;background:rgba(204,0,0,.08);color:var(--error-color,#cc0000);font-size:.95em;}
-ha-entity-picker,ha-textfield{display:block;width:100%;}
+ha-entity-picker,ha-textfield,ha-selector{display:block;width:100%;}
 .conf-row{display:flex;gap:8px;align-items:flex-end;}
 .conf-row ha-textfield{flex:1;}
 .reload-btn{height:56px;padding:0 14px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--secondary-background-color,#e8e8e8);cursor:pointer;white-space:nowrap;font-size:13px;flex-shrink:0;}
 .toggle-row{display:flex;align-items:center;gap:10px;padding:4px 0;}
 .toggle-row label{font-size:14px;color:var(--primary-text-color);cursor:pointer;}
 .hint{font-size:12px;color:var(--secondary-text-color,#888);padding:4px 0;}
+.hc-text-input{width:100%;padding:8px;border:1px solid var(--divider-color,#ccc);border-radius:4px;background:var(--input-fill-color,var(--card-background-color,#fff));color:var(--primary-text-color);font-size:14px;font-family:inherit;box-sizing:border-box;height:44px;outline:none;}
+.hc-text-input:focus{border-color:var(--primary-color,#03a9f4);}
+.add-btn{background:var(--primary-color,#03a9f4);color:#fff;border:none;border-radius:4px;padding:8px 14px;cursor:pointer;font-weight:600;align-self:flex-start;display:inline-flex;align-items:center;gap:6px;}
+.del-btn{background:transparent;border:none;color:var(--error-color,#cc0000);cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;}
+ha-checkbox{display:inline-flex;vertical-align:middle;}
 /* Searchable dropdown */
 .sel-wrap{position:relative;}
 .sel-input{width:100%;height:44px;padding:4px 10px;border:1px solid var(--divider-color,#888);border-radius:4px;background:var(--input-fill-color,var(--card-background-color,#fff));color:var(--primary-text-color,#212121);font-size:13px;font-family:inherit;box-sizing:border-box;cursor:text;outline:none;}
@@ -3166,9 +3357,23 @@ ha-entity-picker,ha-textfield{display:block;width:100%;}
             e.className = 'err'; e.textContent = this._loadError;
             edtRoot.appendChild(e);
         }
+        edtRoot.appendChild(this._sectionLayout());
         edtRoot.appendChild(this._sectionHub());
+
+        // Per-hub sections wrapped in a colored border
+        const hubs    = this._edGetHubs();
+        const idx     = this._edCurrentHubIdx();
+        const hubObj  = (idx >= 0 && hubs[idx]) ? hubs[idx] : (hubs[0] || {});
+        const hubColor = hcv2HubColor(hubObj, idx >= 0 ? idx : 0);
+        const perHubWrap = document.createElement('div');
+        perHubWrap.style.cssText = 'border:2px solid ' + hubColor + ';border-radius:12px;padding:8px 8px 6px;margin-top:6px;display:flex;flex-direction:column;gap:12px;background:' + hubColor + '10;';
+        perHubWrap.appendChild(this._sectionEnigma2());
+        perHubWrap.appendChild(this._sectionSlots('act', 'Aktivitäten-Slots (Hauptbereich)'));
+        perHubWrap.appendChild(this._sectionButtons());
+        perHubWrap.appendChild(this._sectionSlots('bot', 'Extra-Slots (Unten)'));
+        edtRoot.appendChild(perHubWrap);
+
         edtRoot.appendChild(this._sectionSkin());
-        edtRoot.appendChild(this._sectionButtons());
     }
 
     _details(id, title) {
@@ -3193,38 +3398,294 @@ ha-entity-picker,ha-textfield{display:block;width:100%;}
     }
 
     _sectionHub() {
-        const { det, body } = this._details('sec-hub', 'Hub');
+        const { det, body } = this._details('sec-hub', 'Hub-Konfiguration');
+        const hubs = this._edGetHubs();
+        if (!this._edActiveHub || this._edActiveHub >= hubs.length) this._edActiveHub = 0;
 
-        const ep = document.createElement('ha-entity-picker');
-        ep.hass = this._hass;
-        ep.label = 'Harmony Entity (remote.*)';
-        ep.value = this._config.entity || '';
-        ep.setAttribute('domain-filter', 'remote');
-        ep.setAttribute('allow-custom-entity', '');
-        ep.addEventListener('value-changed', e => this._up('entity', e.detail.value));
-        body.appendChild(this._labeled('Harmony Entity', ep));
+        // Tab row: one button per hub + add button
+        const tabRow = document.createElement('div');
+        tabRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px;';
+        hubs.forEach((h, i) => {
+            const isActive = (i === this._edActiveHub);
+            const hc = hcv2HubColor(h, i);
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.textContent = h.name || ('Hub ' + (i + 1));
+            tab.style.cssText = 'padding:4px 12px;border-radius:14px;border:2px solid ' + hc + ';cursor:pointer;font-size:12px;font-weight:600;' +
+                (isActive ? 'background:' + hc + ';color:#fff;' : 'background:' + hc + '15;color:inherit;');
+            tab.onclick = () => {
+                if (this._edActiveHub === i) return;
+                this._edActiveHub = i;
+                this._loaded = false; this._loading = false;
+                this._buildDOM();
+                this._fetchConf().then(() => { this._buildDOM(); });
+            };
+            tabRow.appendChild(tab);
+        });
+        if (hubs.length < HCV2_MAX_HUBS) {
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.textContent = '+ Hub hinzufügen';
+            addBtn.style.cssText = 'padding:4px 10px;border-radius:14px;border:1px dashed var(--divider-color,#ccc);background:transparent;color:inherit;cursor:pointer;font-size:12px;';
+            addBtn.onclick = () => {
+                const next = this._edGetHubs().slice();
+                next.push({ name: 'Hub ' + (next.length + 1), entity: '', config_file: '/local/harmony.conf' });
+                this._edActiveHub = next.length - 1;
+                this._up('hubs', next);
+                this._buildDOM();
+            };
+            tabRow.appendChild(addBtn);
+        }
+        body.appendChild(tabRow);
 
+        const idx = this._edActiveHub;
+        const hub = hubs[idx] || {};
+
+        // Hub name
+        const nameInp = document.createElement('input');
+        nameInp.type = 'text'; nameInp.className = 'hc-text-input';
+        nameInp.value = hub.name || ''; nameInp.placeholder = 'Hub-Name';
+        nameInp.onchange = (e) => this._edPatchHub(idx, 'name', e.target.value);
+        body.appendChild(this._labeled('Hub-Name (Anzeigename)', nameInp));
+
+        // Entity picker
+        body.appendChild(this._labeled('Harmony Hub Entität',
+            this._haSelector({ entity: { domain: 'remote' } }, hub.entity || '',
+                (v) => this._edPatchHub(idx, 'entity', v || ''))
+        ));
+
+        // Config file + reload button
         const confRow = document.createElement('div');
-        confRow.className = 'conf-row';
-        const tf = document.createElement('ha-textfield');
-        tf.label = 'Config-Datei (.conf)';
-        tf.placeholder = '/local/harmony_XXXXXXXX.conf';
-        tf.value = this._config.config_file || '/local/harmony_12563120.conf';
-        tf.addEventListener('change', e => this._up('config_file', e.target.value));
+        confRow.style.cssText = 'display:flex;gap:8px;align-items:flex-end;';
+        const cfgInp = document.createElement('input');
+        cfgInp.type = 'text'; cfgInp.className = 'hc-text-input';
+        cfgInp.style.flex = '1';
+        cfgInp.value = hub.config_file || this._config.config_file || '';
+        cfgInp.placeholder = 'z.B. /local/harmony_12563120.conf';
+        cfgInp.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
         const reloadBtn = document.createElement('button');
-        reloadBtn.textContent = '↺ Neu laden';
-        reloadBtn.className = 'reload-btn';
-        reloadBtn.type = 'button';
+        reloadBtn.textContent = '↺ Neu laden'; reloadBtn.className = 'reload-btn'; reloadBtn.type = 'button';
         reloadBtn.onclick = () => {
             this._loaded = false; this._loadError = null; this._loading = true;
             this._fetchConf()
                 .then(() => { this._loading = false; this._loaded = true; this._buildDOM(); })
                 .catch(() => { this._loading = false; this._loaded = true; this._buildDOM(); });
         };
-        confRow.appendChild(tf); confRow.appendChild(reloadBtn);
-        body.appendChild(confRow);
+        confRow.appendChild(cfgInp); confRow.appendChild(reloadBtn);
+        body.appendChild(this._labeled('Pfad zur Config-Datei', confRow));
+
+        // Hub color picker
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:10px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:12px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Hub-Farbe (Rahmen)';
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color'; colorInp.value = hcv2HubColor(hub, idx);
+        colorInp.style.cssText = 'width:50px;height:30px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.oninput = (e) => this._edPatchHub(idx, 'color', e.target.value);
+        colorWrap.appendChild(colorLbl); colorWrap.appendChild(colorInp);
+        body.appendChild(colorWrap);
+
+        // Remove hub button (only if more than one hub)
+        if (hubs.length > 1) {
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button'; delBtn.textContent = 'Diesen Hub entfernen';
+            delBtn.style.cssText = 'margin-top:10px;padding:6px 12px;border-radius:6px;border:1px solid #c0392b;cursor:pointer;font-size:12px;background:transparent;color:#c0392b;align-self:flex-start;';
+            delBtn.onclick = () => {
+                const next = this._edGetHubs().filter((_, i) => i !== idx);
+                this._edActiveHub = Math.max(0, idx - 1);
+                this._up('hubs', next);
+                this._buildDOM();
+            };
+            body.appendChild(delBtn);
+        }
 
         return det;
+    }
+
+    // ---- Enigma2 / OpenWebIF section ----
+
+    _sectionEnigma2() {
+        const { det, body } = this._details('sec-enigma2', 'TV-Receiver (OpenWebIF / Enigma2)');
+        const hub = this._edCurrentHub();
+
+        const banner = this._edHubBanner();
+        if (banner) body.appendChild(banner);
+
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size:12px;color:var(--secondary-text-color);margin-bottom:10px;line-height:1.5;';
+        info.innerHTML = '<b>Empfohlen:</b> HA REST-Sensor als Proxy (kein CORS nötig).<br>Alternativ: Direkt-URL mit CORS-Freigabe am Receiver.';
+        body.appendChild(info);
+
+        body.appendChild(this._labeled(
+            'HA REST-Sensor für EPG-Daten (empfohlen)',
+            this._haSelector(
+                { entity: { domain: 'sensor' } },
+                hub.enigma2_entity || '',
+                (v) => this._edSetHubField('enigma2_entity', v || undefined)
+            )
+        ));
+
+        const grabIntRow = document.createElement('div');
+        grabIntRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;';
+        const grabIntField = document.createElement('input');
+        grabIntField.type = 'number'; grabIntField.className = 'hc-text-input';
+        grabIntField.min = '5'; grabIntField.step = '5';
+        grabIntField.value = String(hub.epg_grab_interval || 30);
+        grabIntField.onchange = (e) => {
+            const v = Math.max(5, parseInt(e.target.value, 10) || 30);
+            this._edSetHubField('epg_grab_interval', v);
+        };
+        const grabIntWrap = this._labeled('Hintergrundbild Refresh (Sekunden)', grabIntField);
+        grabIntWrap.style.flex = '1';
+        grabIntRow.appendChild(grabIntWrap);
+        body.appendChild(grabIntRow);
+
+        // Activity checkboxes
+        const acts = this._allActivityNames();
+        if (acts.length > 0) {
+            const lbl = document.createElement('div');
+            lbl.style.cssText = 'margin-top:12px;font-size:12px;color:var(--secondary-text-color);';
+            lbl.textContent = 'Aktivitäten, die den Receiver nutzen:';
+            body.appendChild(lbl);
+            const current = Array.isArray(hub.enigma2_activities) ? hub.enigma2_activities : [];
+            acts.forEach(actName => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;';
+                const cb = document.createElement('ha-checkbox');
+                cb.checked = current.includes(actName);
+                cb.onchange = (e) => this._patchEnigma2Activity(actName, e.target.checked);
+                const span = document.createElement('span');
+                span.style.cssText = 'font-size:14px;cursor:pointer;';
+                span.textContent = actName;
+                span.onclick = () => { cb.checked = !cb.checked; cb.onchange({ target: cb }); };
+                row.appendChild(cb); row.appendChild(span);
+                body.appendChild(row);
+            });
+        }
+        return det;
+    }
+
+    _allActivityNames() {
+        return (this._activitiesList || []).map(a => a.name).filter(Boolean);
+    }
+
+    _patchEnigma2Activity(actName, enabled) {
+        this._edTransformHubField('enigma2_activities', (cur) => {
+            let next = Array.isArray(cur) ? cur.slice() : [];
+            if (enabled) { if (!next.includes(actName)) next.push(actName); }
+            else         { next = next.filter(a => a !== actName); }
+            return next;
+        });
+    }
+
+    // ---- Slots section ----
+
+    _sectionSlots(prefix, title) {
+        const { det, body } = this._details('sec-slots-' + prefix, title);
+        const banner = this._edHubBanner();
+        if (banner) body.appendChild(banner);
+        const slots = this._edCurrentHub().dynamic_slots || {};
+
+        let lastFilled = 0;
+        for (let i = 1; i <= 9; i++) {
+            const s = slots[prefix + '_' + i];
+            if (s && (s.text || s.icon || s.action)) lastFilled = i;
+        }
+        const actMin = (prefix === 'act' && this._activitiesList) ? this._activitiesList.length : 0;
+        const baseMin = Math.max(actMin, lastFilled, 1);
+        const explicit = this._slotCounts[prefix];
+        const showCount = Math.min(9, explicit !== null ? Math.max(lastFilled, explicit) : baseMin);
+
+        for (let i = 1; i <= showCount; i++) body.appendChild(this._slotRow(prefix, i));
+
+        if (showCount < 9) {
+            const add = document.createElement('button');
+            add.type = 'button'; add.className = 'add-btn';
+            const ic = document.createElement('ha-icon'); ic.setAttribute('icon', 'mdi:plus');
+            add.appendChild(ic);
+            add.appendChild(document.createTextNode(' Slot hinzufügen'));
+            add.onclick = () => { this._slotCounts[prefix] = showCount + 1; this._buildDOM(); };
+            body.appendChild(add);
+        }
+        return det;
+    }
+
+    _slotRow(prefix, idx) {
+        const slotId = prefix + '_' + idx;
+        const hub  = this._edCurrentHub();
+        const slot = (hub.dynamic_slots && hub.dynamic_slots[slotId]) || {};
+        let defaultAction = '';
+        if (prefix === 'act' && !slot.action && this._activitiesList && this._activitiesList[idx - 1]) {
+            defaultAction = this._activitiesList[idx - 1].actionValue;
+        }
+        const currentAction = slot.action || defaultAction;
+
+        const card = document.createElement('div');
+        card.style.cssText = 'border:1px solid var(--divider-color,#ccc);border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:8px;';
+
+        const r1 = document.createElement('div');
+        r1.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 36px;gap:8px;align-items:end;';
+
+        r1.appendChild(this._labeled('Icon (Slot ' + idx + ')',
+            this._haSelector({ icon: {} }, slot.icon || '', (v) => this._patchSlot(slotId, 'icon', v || ''))
+        ));
+
+        const txtInput = document.createElement('input');
+        txtInput.type = 'text'; txtInput.className = 'hc-text-input';
+        txtInput.value = slot.text || '';
+        txtInput.onchange = (e) => this._patchSlot(slotId, 'text', e.target.value);
+        r1.appendChild(this._labeled('Anzeigename', txtInput));
+
+        const del = document.createElement('button');
+        del.type = 'button'; del.className = 'del-btn'; del.title = 'Slot entfernen';
+        const dic = document.createElement('ha-icon'); dic.setAttribute('icon', 'mdi:close');
+        del.appendChild(dic);
+        del.onclick = () => {
+            this._edTransformHubField('dynamic_slots', (cur) => {
+                const next = { ...(cur || {}) };
+                delete next[slotId];
+                return next;
+            });
+            this._slotCounts[prefix] = Math.max(0, idx - 1);
+            this._buildDOM();
+        };
+        r1.appendChild(del);
+        card.appendChild(r1);
+
+        const r2 = document.createElement('div');
+        r2.appendChild(this._labeled('Aktion',
+            this._searchSelect(this._cmdOptions, currentAction, '-- Aktion wählen --',
+                (v) => this._patchSlot(slotId, 'action', v || ''))
+        ));
+        card.appendChild(r2);
+        return card;
+    }
+
+    _patchSlot(slotId, field, value) {
+        this._edTransformHubField('dynamic_slots', (cur) => {
+            const next = { ...(cur || {}) };
+            const slot = { ...(next[slotId] || {}) };
+            if (value === '' || value === null || value === undefined) delete slot[field];
+            else slot[field] = value;
+            if (!slot.text && !slot.icon && !slot.action) delete next[slotId];
+            else next[slotId] = slot;
+            return next;
+        });
+    }
+
+    // ---- ha-selector wrapper ----
+
+    _haSelector(selector, value, onChange) {
+        const el = document.createElement('ha-selector');
+        el.hass = this._hass; el.selector = selector; el.value = value;
+        el.addEventListener('value-changed', (e) => {
+            e.stopPropagation(); e.preventDefault();
+            const val = (e.detail !== null && e.detail !== undefined) ? e.detail.value : undefined;
+            setTimeout(() => { try { onChange(val); } catch (err) {} }, 0);
+        });
+        return el;
     }
 
     _sectionSkin() {
@@ -3264,30 +3725,63 @@ ha-entity-picker,ha-textfield{display:block;width:100%;}
 
     _sectionButtons() {
         const { det, body } = this._details('sec-btns', 'Tastenbelegung');
+        const hub = this._edCurrentHub();
 
-        // Context selector + auto-fill
+        const banner = this._edHubBanner();
+        if (banner) body.appendChild(banner);
+
+        // Context selector + auto-fill + device filter
         const ctxRow = document.createElement('div');
         ctxRow.className = 'ctx-row';
         ctxRow.appendChild(this._labeled('Kontext',
             this._nativeSelect(this._contextOptions, this._currentContext, '-- Kontext --',
                 v => { this._currentContext = v || 'global'; this._buildDOM(); })
         ));
+
+        // Device filter for auto-fill
+        if (this._confData && this._confData.Devices) {
+            const deviceNames = Object.keys(this._confData.Devices);
+            if (deviceNames.length > 0) {
+                const devOpts = deviceNames.map(n => ({ label: n, value: n }));
+                const devWrap = this._labeled('Gerät (Auto-Befüllen)',
+                    this._nativeSelect(devOpts, this._currentAutoDevice || '', '-- Alle Geräte --',
+                        v => { this._currentAutoDevice = v || ''; this._buildDOM(); })
+                );
+                devWrap.style.flex = '1';
+                devWrap.style.minWidth = '160px';
+                ctxRow.appendChild(devWrap);
+            }
+        }
+
         const autoBtn = document.createElement('button');
         autoBtn.type = 'button'; autoBtn.className = 'auto-btn';
         const autoIco = document.createElement('ha-icon');
         autoIco.setAttribute('icon','mdi:lightning-bolt');
         autoBtn.appendChild(autoIco);
         autoBtn.appendChild(document.createTextNode(' Auto-befüllen'));
-        autoBtn.onclick = () => this._applyAutoMapping(this._currentContext);
+        autoBtn.onclick = () => this._applyAutoMapping(this._currentContext, this._currentAutoDevice || '');
         ctxRow.appendChild(autoBtn);
         body.appendChild(ctxRow);
 
+        // Activity-media entity picker (only for non-global context)
+        if (this._currentContext !== 'global') {
+            const mediaEid = (hub.activity_media && hub.activity_media[this._currentContext]) || '';
+            body.appendChild(this._labeled(
+                'Media-Entity für diese Aktivität (optional)',
+                this._haSelector(
+                    { entity: { domain: 'media_player' } },
+                    mediaEid,
+                    v => this._patchActivityMedia(this._currentContext, v || '')
+                )
+            ));
+        }
+
         const hint = document.createElement('div');
         hint.className = 'hint';
-        hint.textContent = 'Auto-befüllen: befüllt leere Felder mit dem ersten passenden Befehl aus der Conf. Bereits belegte Felder werden nicht überschrieben.';
+        hint.textContent = 'Auto-befüllen: befüllt leere Felder mit dem ersten passenden Befehl. Bereits belegte Felder werden nicht überschrieben.';
         body.appendChild(hint);
 
-        const ctxButtons = (this._config.buttons && this._config.buttons[this._currentContext]) || {};
+        const ctxButtons = (hub.buttons && hub.buttons[this._currentContext]) || {};
         this._buttonIds.forEach(btnId => {
             const row = document.createElement('div');
             row.className = 'btn-row';
@@ -3446,47 +3940,1077 @@ ha-entity-picker,ha-textfield{display:block;width:100%;}
     }
 
     _patchButton(ctx, btnId, value) {
-        const cfg  = JSON.parse(JSON.stringify(this._config));
-        if (!cfg.buttons)      cfg.buttons      = {};
-        if (!cfg.buttons[ctx]) cfg.buttons[ctx] = {};
-        if (!value) delete cfg.buttons[ctx][btnId];
-        else        cfg.buttons[ctx][btnId] = value;
-        if (ctx !== 'global' && Object.keys(cfg.buttons[ctx]).length === 0) {
-            delete cfg.buttons[ctx];
-        }
-        this._config = cfg;
-        this._dispatch();
+        this._edTransformHubField('buttons', cur => {
+            const next = { ...(cur || {}) };
+            const ctxBtns = { ...(next[ctx] || {}) };
+            if (!value) delete ctxBtns[btnId];
+            else ctxBtns[btnId] = value;
+            if (ctx !== 'global' && Object.keys(ctxBtns).length === 0) delete next[ctx];
+            else next[ctx] = ctxBtns;
+            return next;
+        });
     }
 
-    _applyAutoMapping(ctx) {
+    _applyAutoMapping(ctx, deviceFilter) {
         if (!this._confData) return;
         const devices = this._confData.Devices || {};
-        const cfg     = JSON.parse(JSON.stringify(this._config));
-        if (!cfg.buttons)      cfg.buttons      = {};
-        if (!cfg.buttons[ctx]) cfg.buttons[ctx] = {};
-        const ctxBtns = cfg.buttons[ctx];
-        let filled = 0;
-        for (const btnId of this._buttonIds) {
-            if (ctxBtns[btnId]) continue;
-            const raw = HCV2_FALLBACKS[btnId];
-            if (!raw) continue;
-            const candidates = Array.isArray(raw) ? raw : [raw];
-            for (const candidate of candidates) {
-                let found = false;
-                for (const devName in devices) {
-                    const dev = devices[devName];
-                    if (!dev || !Array.isArray(dev.commands)) continue;
-                    if (dev.commands.indexOf(candidate) !== -1) {
-                        ctxBtns[btnId] = 'command:::' + dev.id + ':::' + candidate;
-                        filled++; found = true; break;
+        this._edTransformHubField('buttons', cur => {
+            const next = { ...(cur || {}) };
+            if (!next[ctx]) next[ctx] = {};
+            const ctxBtns = { ...next[ctx] };
+            for (const btnId of this._buttonIds) {
+                if (ctxBtns[btnId]) continue;
+                const raw = HCV2_FALLBACKS[btnId];
+                if (!raw) continue;
+                const candidates = Array.isArray(raw) ? raw : [raw];
+                for (const candidate of candidates) {
+                    let found = false;
+                    for (const devName in devices) {
+                        if (deviceFilter && devName !== deviceFilter) continue;
+                        const dev = devices[devName];
+                        if (!dev || !Array.isArray(dev.commands)) continue;
+                        if (dev.commands.indexOf(candidate) !== -1) {
+                            ctxBtns[btnId] = 'command:::' + dev.id + ':::' + candidate;
+                            found = true; break;
+                        }
                     }
+                    if (found) break;
                 }
-                if (found) break;
+            }
+            next[ctx] = ctxBtns;
+            return next;
+        });
+        this._buildDOM();
+    }
+
+    _patchActivityMedia(actName, entityId) {
+        this._edTransformHubField('activity_media', cur => {
+            const next = { ...(cur || {}) };
+            if (entityId) next[actName] = entityId;
+            else delete next[actName];
+            return next;
+        });
+    }
+
+    // ---- get _leScale() ----
+    get _leScale() { return 2; }
+
+    // ---- Layout-Editor: _sectionLayout + _le* methods ----
+
+    _sectionLayout() {
+        if (!this._leMode)    this._leMode    = 'tv';
+        if (!this._leLayouts) this._leLayouts = {};
+
+        const { det, body } = this._details('sec-layout', 'Display-Layout');
+        const S = this._leScale;
+
+        // Display-Offset Konfiguration
+        const offsetRow = document.createElement('div');
+        offsetRow.style.cssText = 'display:flex;gap:12px;margin-bottom:14px;align-items:center;flex-wrap:wrap;';
+        const mkOffset = (label, key, defVal) => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+            const lbl = document.createElement('label');
+            lbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);';
+            lbl.textContent = label;
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '0'; input.max = '200'; input.step = '1';
+            input.value = (this._config && this._config[key] !== undefined) ? this._config[key] : defVal;
+            input.style.cssText = 'width:80px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+            input.onchange = (e) => {
+                const v = parseInt(e.target.value, 10);
+                if (Number.isFinite(v) && v >= 0) {
+                    this._up(key, v);
+                    this._leLayouts = {};   // Reset Editor-State (Defaults neu berechnen)
+                    this._buildDOM();
+                }
+            };
+            wrap.appendChild(lbl);
+            wrap.appendChild(input);
+            return wrap;
+        };
+        offsetRow.appendChild(mkOffset('Display-Offset Breite (px)',  'display_offset_w', HCV2_DEFAULT_OFFSET_W));
+        offsetRow.appendChild(mkOffset('Display-Offset Höhe (px)',    'display_offset_h', HCV2_DEFAULT_OFFSET_H));
+
+        // Display-Hintergrundfarbe (Smoked-Glass)
+        const bgWrap = document.createElement('div');
+        bgWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const bgLbl  = document.createElement('label');
+        bgLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);';
+        bgLbl.textContent = 'Display-Hintergrundfarbe';
+        const bgInp  = document.createElement('input');
+        bgInp.type = 'color';
+        bgInp.value = (this._config && this._config.display_bg_color) || HCV2_DEFAULT_DISPLAY_BG;
+        bgInp.style.cssText = 'width:60px;height:30px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        bgInp.oninput = (e) => this._up('display_bg_color', e.target.value);
+        bgWrap.appendChild(bgLbl);
+        bgWrap.appendChild(bgInp);
+        offsetRow.appendChild(bgWrap);
+
+        const offInfo = document.createElement('div');
+        offInfo.style.cssText = 'font-size:11px;color:var(--secondary-text-color);font-style:italic;flex-basis:100%;';
+        offInfo.textContent = 'Display-Offset verschiebt die rechte/untere Grenze (Basis 320×126). Hintergrundfarbe = Smoked-Glass-Ton.';
+        offsetRow.appendChild(offInfo);
+        body.appendChild(offsetRow);
+
+        // Tabs TV / Kodi
+        const tabBar = document.createElement('div');
+        tabBar.style.cssText = 'display:flex;gap:8px;margin-bottom:12px;';
+        ['tv', 'media'].forEach(m => {
+            const b = document.createElement('button');
+            b.textContent = m === 'tv' ? 'Fernsehen (TV)' : 'Kodi';
+            const act = m === this._leMode;
+            b.style.cssText = 'padding:5px 14px;border-radius:16px;border:2px solid;cursor:pointer;font-size:12px;transition:all .15s;' +
+                (act ? 'background:var(--primary-color,#03a9f4);color:#fff;border-color:var(--primary-color,#03a9f4);'
+                      : 'background:transparent;color:inherit;border-color:var(--divider-color,#ccc);');
+            b.onclick = () => { this._leMode = m; this._buildDOM(); };
+            tabBar.appendChild(b);
+        });
+        body.appendChild(tabBar);
+
+        const mode = this._leMode;
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const dispW = this._dispW, dispH = this._dispH;
+
+        // Grid (2× vergrößert)
+        const grid = document.createElement('div');
+        grid.style.cssText = [
+            `width:${dispW * S}px;height:${dispH * S}px;`,
+            'position:relative;overflow:hidden;',
+            'background:#1a1a2e;',
+            `background-image:linear-gradient(rgba(255,255,255,0.13) 1px,transparent 1px),`,
+            `linear-gradient(90deg,rgba(255,255,255,0.13) 1px,transparent 1px);`,
+            `background-size:${HCV2_COL_W * S}px ${HCV2_ROW_H * S}px;`,
+            'border:2px solid rgba(255,255,255,0.35);border-radius:5px;',
+            'box-sizing:border-box;cursor:crosshair;flex-shrink:0;touch-action:none;',
+        ].join('');
+        this._leGridEl = grid;
+
+        // Progress-Bar-Sperrzone (untere 4px = kein Snap-Bereich)
+        const pbarZone = document.createElement('div');
+        pbarZone.style.cssText = [
+            `position:absolute;bottom:0;left:0;right:0;height:${HCV2_PBAR_H * S}px;`,
+            'background:rgba(255,255,255,0.06);pointer-events:none;z-index:1;',
+            'border-top:1px dashed rgba(255,255,255,0.25);',
+        ].join('');
+        grid.appendChild(pbarZone);
+
+        // Snap-Preview (zeigt Zielposition beim Ziehen)
+        const snapPrev = document.createElement('div');
+        snapPrev.style.cssText = [
+            'position:absolute;pointer-events:none;display:none;z-index:5;',
+            'border:2px dashed rgba(255,255,255,0.9);box-sizing:border-box;',
+            'background:rgba(255,255,255,0.12);border-radius:2px;',
+        ].join('');
+        grid.appendChild(snapPrev);
+        this._leSnapPrev = snapPrev;
+
+        const coordTip = document.createElement('div');
+        coordTip.style.cssText = 'font-size:11px;color:var(--secondary-text-color);min-height:16px;margin-top:4px;font-family:monospace;letter-spacing:0.02em;';
+        this._leCoordTip = coordTip;
+
+        grid.addEventListener('pointermove', (e) => {
+            if (this._leDrag) return;
+            const r = grid.getBoundingClientRect();
+            const gx = Math.max(0, Math.min(this._dispW, Math.round((e.clientX - r.left) / (HCV2_COL_W * S)) * HCV2_COL_W));
+            const gy = Math.max(0, Math.min(this._dispH, Math.round((e.clientY - r.top)  / (HCV2_ROW_H * S)) * HCV2_ROW_H));
+            coordTip.textContent = 'x: ' + gx + 'px  y: ' + gy + 'px';
+        });
+        grid.addEventListener('pointerleave', () => { if (!this._leDrag) coordTip.textContent = ''; });
+
+        this._leRenderGridEls(mode);
+
+        // Scrollbarer Wrapper (falls Config-Panel schmäler als 640px)
+        const scrollWrap = document.createElement('div');
+        scrollWrap.style.cssText = 'overflow-x:auto;width:100%;-webkit-overflow-scrolling:touch;padding-bottom:2px;';
+        scrollWrap.appendChild(grid);
+        body.appendChild(scrollWrap);
+        body.appendChild(coordTip);
+
+        // Palette
+        const palLbl = document.createElement('div');
+        palLbl.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:10px;margin-bottom:6px;';
+        palLbl.textContent = 'Auf das Raster ziehen · weiße Ecke unten-rechts zum Größe ändern · vom Raster ziehen = entfernen:';
+        body.appendChild(palLbl);
+
+        const palette = document.createElement('div');
+        palette.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;';
+        this._lePaletteEl = palette;
+        this._leRenderPaletteItems(mode, palette);
+        body.appendChild(palette);
+
+        // Panel-Eigenschaften (nur sichtbar wenn Panel im Layout)
+        const panelBox = document.createElement('div');
+        panelBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        this._lePanelBox = panelBox;
+        this._leRenderPanelControls(mode);
+        body.appendChild(panelBox);
+
+        // Linien-Eigenschaften (nur sichtbar wenn Linie im Layout)
+        const lineBox = document.createElement('div');
+        lineBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        this._leLineBox = lineBox;
+        this._leRenderLineControls(mode);
+        body.appendChild(lineBox);
+
+        // Text-Element-Eigenschaften (Schriftgröße/-art/-farbe für Activity, Sender, Titel etc.)
+        const textBox = document.createElement('div');
+        textBox.style.cssText = 'display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;border:1px solid var(--divider-color,#ccc);border-radius:6px;background:var(--secondary-background-color,#f5f5f5);';
+        this._leTextBox = textBox;
+        this._leRenderTextControls(mode);
+        body.appendChild(textBox);
+
+        // Aktions-Buttons
+        const actRow = document.createElement('div');
+        actRow.style.cssText = 'display:flex;gap:8px;';
+
+        const btnReset = document.createElement('button');
+        btnReset.textContent = 'Zurücksetzen';
+        btnReset.style.cssText = 'padding:6px 12px;border-radius:6px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:12px;background:transparent;color:inherit;';
+        btnReset.onclick = () => {
+            this._leLayouts[mode] = hcv2DefaultLayout(mode);
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+        };
+
+        const btnApply = document.createElement('button');
+        btnApply.textContent = 'Übernehmen';
+        btnApply.style.cssText = 'padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:var(--primary-color,#03a9f4);color:#fff;';
+        btnApply.onclick = () => this._leSaveLayout(mode);
+
+        actRow.appendChild(btnReset);
+        actRow.appendChild(btnApply);
+        body.appendChild(actRow);
+
+        // Hinweis
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11px;color:var(--secondary-text-color);margin-top:8px;font-style:italic;';
+        hint.textContent = 'Änderungen erst durch "Übernehmen" speichern.';
+        body.appendChild(hint);
+
+        return det;
+    }
+
+    // Panel-Eigenschaften (Auswahl + Farbe/Alpha/Radius + Löschen) – nur sichtbar wenn ≥1 Panel platziert
+    _leRenderPanelControls(mode) {
+        const box = this._lePanelBox;
+        if (!box) return;
+        box.innerHTML = '';
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode] || {};
+        const panelKeys = Object.keys(layout).filter(k => hcv2IsPanel(k) && layout[k] && layout[k].visible !== false);
+        if (panelKeys.length === 0) {
+            box.style.display = 'none';
+            this._leSelectedPanel = null;
+            return;
+        }
+        box.style.display = 'flex';
+        if (!this._leSelectedPanel || !panelKeys.includes(this._leSelectedPanel)) {
+            this._leSelectedPanel = panelKeys[0];
+        }
+        const selKey = this._leSelectedPanel;
+        const panel  = layout[selKey];
+
+        const lblTitle = document.createElement('div');
+        lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
+        lblTitle.textContent = 'Panel:';
+        box.appendChild(lblTitle);
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:12px;';
+        panelKeys.forEach((k, i) => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = 'Panel ' + (i + 1) + (k === 'panel' ? '' : ' (' + k + ')');
+            if (k === selKey) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = (e) => {
+            this._leSelectedPanel = e.target.value;
+            this._leRenderPanelControls(mode);
+            this._leRenderGridEls(mode);
+        };
+        box.appendChild(sel);
+
+        // Farbe
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Farbe';
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = panel.bgColor || '#404040';
+        colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        colorInp.oninput = (e) => {
+            this._leUpdateLayoutEl(mode, selKey, { bgColor: e.target.value });
+            this._leRenderGridEls(mode);
+        };
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorInp);
+        box.appendChild(colorWrap);
+
+        // Transparenz
+        const alphaWrap = document.createElement('div');
+        alphaWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:160px;';
+        const alphaLbl = document.createElement('label');
+        alphaLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        const alphaVal = (panel.bgAlpha != null) ? panel.bgAlpha : 0.5;
+        const transparency = Math.round((1 - alphaVal) * 100);
+        alphaLbl.textContent = 'Transparenz: ' + transparency + '%';
+        const alphaInp = document.createElement('input');
+        alphaInp.type = 'range';
+        alphaInp.min = '0'; alphaInp.max = '100'; alphaInp.step = '1';
+        alphaInp.value = transparency;
+        alphaInp.style.cssText = 'width:140px;touch-action:auto;';
+        alphaInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        alphaInp.addEventListener('mousedown',   (e) => e.stopPropagation());
+        alphaInp.addEventListener('touchstart',  (e) => e.stopPropagation());
+        alphaInp.oninput = (e) => {
+            const t = Number(e.target.value);
+            const a = Math.max(0, Math.min(1, 1 - t / 100));
+            alphaLbl.textContent = 'Transparenz: ' + t + '%';
+            this._leUpdateLayoutEl(mode, selKey, { bgAlpha: a });
+            this._leRenderGridEls(mode);
+        };
+        alphaWrap.appendChild(alphaLbl);
+        alphaWrap.appendChild(alphaInp);
+        box.appendChild(alphaWrap);
+
+        // Eckradius
+        const radWrap = document.createElement('div');
+        radWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const radLbl = document.createElement('label');
+        radLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        radLbl.textContent = 'Eckradius (px)';
+        const radInp = document.createElement('input');
+        radInp.type = 'number';
+        radInp.min = '0'; radInp.max = '40'; radInp.step = '1';
+        radInp.value = (panel.radius != null) ? panel.radius : 8;
+        radInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        radInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        radInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            this._leUpdateLayoutEl(mode, selKey, { radius: Number.isFinite(v) ? v : 8 });
+            this._leRenderGridEls(mode);
+        };
+        radWrap.appendChild(radLbl);
+        radWrap.appendChild(radInp);
+        box.appendChild(radWrap);
+
+        // Löschen-Button
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Panel löschen';
+        btnDel.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid #c0392b;cursor:pointer;font-size:11px;background:transparent;color:#c0392b;align-self:flex-end;margin-left:auto;';
+        btnDel.onclick = () => {
+            this._leDeleteLayoutEl(mode, selKey);
+            this._leSelectedPanel = null;
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+        };
+        box.appendChild(btnDel);
+    }
+
+    // Linien-Eigenschaften (Auswahl + Farbe/Länge/Dicke/Rotation + Löschen)
+    _leRenderLineControls(mode) {
+        const box = this._leLineBox;
+        if (!box) return;
+        box.innerHTML = '';
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode] || {};
+        const lineKeys = Object.keys(layout).filter(k => hcv2IsLine(k) && layout[k] && layout[k].visible !== false);
+        if (lineKeys.length === 0) {
+            box.style.display = 'none';
+            this._leSelectedLine = null;
+            return;
+        }
+        box.style.display = 'flex';
+        if (!this._leSelectedLine || !lineKeys.includes(this._leSelectedLine)) {
+            this._leSelectedLine = lineKeys[0];
+        }
+        const selKey = this._leSelectedLine;
+        const line   = layout[selKey];
+
+        const lblTitle = document.createElement('div');
+        lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
+        lblTitle.textContent = 'Linie:';
+        box.appendChild(lblTitle);
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:12px;';
+        lineKeys.forEach((k, i) => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = 'Linie ' + (i + 1) + (k === 'line' ? '' : ' (' + k + ')');
+            if (k === selKey) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = (e) => {
+            this._leSelectedLine = e.target.value;
+            this._leRenderLineControls(mode);
+            this._leRenderGridEls(mode);
+        };
+        box.appendChild(sel);
+
+        // Farbe
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Farbe';
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = line.color || '#888888';
+        colorInp.style.cssText = 'width:50px;height:28px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;';
+        colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        colorInp.oninput = (e) => {
+            this._leUpdateLayoutEl(mode, selKey, { color: e.target.value });
+            this._leRenderGridEls(mode);
+        };
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorInp);
+        box.appendChild(colorWrap);
+
+        // Länge
+        const lenWrap = document.createElement('div');
+        lenWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const lenLbl = document.createElement('label');
+        lenLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        lenLbl.textContent = 'Länge (px)';
+        const lenInp = document.createElement('input');
+        lenInp.type = 'number';
+        lenInp.min = '1'; lenInp.max = '500'; lenInp.step = '1';
+        lenInp.value = line.w || 50;
+        lenInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        lenInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        lenInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            this._leUpdateLayoutEl(mode, selKey, { w: Math.max(1, Number.isFinite(v) ? v : 50) });
+            this._leRenderGridEls(mode);
+        };
+        lenWrap.appendChild(lenLbl);
+        lenWrap.appendChild(lenInp);
+        box.appendChild(lenWrap);
+
+        // Dicke
+        const thickWrap = document.createElement('div');
+        thickWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const thickLbl = document.createElement('label');
+        thickLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        thickLbl.textContent = 'Dicke (px)';
+        const thickInp = document.createElement('input');
+        thickInp.type = 'number';
+        thickInp.min = '1'; thickInp.max = '20'; thickInp.step = '1';
+        thickInp.value = line.h || 2;
+        thickInp.style.cssText = 'width:50px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        thickInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        thickInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            this._leUpdateLayoutEl(mode, selKey, { h: Math.max(1, Number.isFinite(v) ? v : 2) });
+            this._leRenderGridEls(mode);
+        };
+        thickWrap.appendChild(thickLbl);
+        thickWrap.appendChild(thickInp);
+        box.appendChild(thickWrap);
+
+        // Rotation
+        const rotWrap = document.createElement('div');
+        rotWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const rotLbl = document.createElement('label');
+        rotLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        rotLbl.textContent = 'Winkel (°)';
+        const rotInp = document.createElement('input');
+        rotInp.type = 'number';
+        rotInp.min = '0'; rotInp.max = '359'; rotInp.step = '1';
+        rotInp.value = (line.rotation != null) ? line.rotation : 0;
+        rotInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        rotInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        rotInp.onchange = (e) => {
+            let v = parseInt(e.target.value, 10);
+            if (!Number.isFinite(v)) v = 0;
+            v = ((v % 360) + 360) % 360;
+            this._leUpdateLayoutEl(mode, selKey, { rotation: v });
+            this._leRenderGridEls(mode);
+        };
+        rotWrap.appendChild(rotLbl);
+        rotWrap.appendChild(rotInp);
+        box.appendChild(rotWrap);
+
+        // Löschen-Button
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Linie löschen';
+        btnDel.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid #c0392b;cursor:pointer;font-size:11px;background:transparent;color:#c0392b;align-self:flex-end;margin-left:auto;';
+        btnDel.onclick = () => {
+            this._leDeleteLayoutEl(mode, selKey);
+            this._leSelectedLine = null;
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+        };
+        box.appendChild(btnDel);
+    }
+
+    // Text-Element-Eigenschaften (Schriftgröße/-art/-farbe für sichtbare Text-Elemente)
+    _leRenderTextControls(mode) {
+        const box = this._leTextBox;
+        if (!box) return;
+        box.innerHTML = '';
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode] || {};
+        const labels = { activity: 'Activity', channel: 'Sender', title: 'Titel',
+                         time: 'Zeit', timespan: 'Beg-End', menu: 'Menü' };
+        const textKeys = HCV2_TEXT_ELEM_KEYS.filter(k => layout[k] && layout[k].visible !== false);
+        if (textKeys.length === 0) {
+            box.style.display = 'none';
+            this._leSelectedTextEl = null;
+            return;
+        }
+        box.style.display = 'flex';
+        if (!this._leSelectedTextEl || !textKeys.includes(this._leSelectedTextEl)) {
+            this._leSelectedTextEl = textKeys[0];
+        }
+        const selKey = this._leSelectedTextEl;
+        const def    = layout[selKey];
+
+        const lblTitle = document.createElement('div');
+        lblTitle.style.cssText = 'font-size:12px;font-weight:600;margin-right:4px;';
+        lblTitle.textContent = 'Text:';
+        box.appendChild(lblTitle);
+
+        // Element-Auswahl-Dropdown
+        const sel = document.createElement('select');
+        sel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:12px;';
+        textKeys.forEach(k => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = labels[k] || k;
+            if (k === selKey) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = (e) => {
+            this._leSelectedTextEl = e.target.value;
+            this._leRenderTextControls(mode);
+            this._leRenderGridEls(mode);
+        };
+        box.appendChild(sel);
+
+        // Schriftgröße
+        const sizeWrap = document.createElement('div');
+        sizeWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const sizeLbl = document.createElement('label');
+        sizeLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        sizeLbl.textContent = 'Größe (px)';
+        const sizeInp = document.createElement('input');
+        sizeInp.type = 'number';
+        sizeInp.min = '6'; sizeInp.max = '40'; sizeInp.step = '1';
+        sizeInp.placeholder = 'auto';
+        sizeInp.value = def.fontSize || '';
+        sizeInp.style.cssText = 'width:60px;padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;';
+        sizeInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        sizeInp.onchange = (e) => {
+            const v = parseInt(e.target.value, 10);
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            if (Number.isFinite(v) && v >= 6) next.fontSize = v;
+            else delete next.fontSize;
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+        };
+        sizeWrap.appendChild(sizeLbl);
+        sizeWrap.appendChild(sizeInp);
+        box.appendChild(sizeWrap);
+
+        // Schriftart
+        const fontWrap = document.createElement('div');
+        fontWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const fontLbl = document.createElement('label');
+        fontLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        fontLbl.textContent = 'Schriftart';
+        const fontSel = document.createElement('select');
+        fontSel.style.cssText = 'padding:4px 6px;border-radius:4px;border:1px solid var(--divider-color,#ccc);background:var(--card-background-color);color:inherit;font-size:13px;min-width:140px;';
+        HCV2_FONT_FAMILIES.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.value;
+            opt.textContent = f.label;
+            if ((def.fontFamily || '') === f.value) opt.selected = true;
+            opt.style.fontFamily = f.value || 'inherit';
+            fontSel.appendChild(opt);
+        });
+        fontSel.addEventListener('pointerdown', (e) => e.stopPropagation());
+        fontSel.onchange = (e) => {
+            const v = e.target.value;
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            if (v) next.fontFamily = v; else delete next.fontFamily;
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+        };
+        fontWrap.appendChild(fontLbl);
+        fontWrap.appendChild(fontSel);
+        box.appendChild(fontWrap);
+
+        // Farbe (Auto / manuell)
+        const colorWrap = document.createElement('div');
+        colorWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+        const colorLbl = document.createElement('label');
+        colorLbl.style.cssText = 'font-size:10px;color:var(--secondary-text-color);';
+        colorLbl.textContent = 'Farbe';
+        const colorRow = document.createElement('div');
+        colorRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+        const isAuto = !def.color || def.color === 'auto';
+        const autoChk = document.createElement('label');
+        autoChk.style.cssText = 'display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;';
+        const autoBox = document.createElement('input');
+        autoBox.type = 'checkbox';
+        autoBox.checked = isAuto;
+        autoBox.style.margin = '0';
+        autoChk.appendChild(autoBox);
+        const autoTxt = document.createElement('span');
+        autoTxt.textContent = 'Auto';
+        autoChk.appendChild(autoTxt);
+        const colorInp = document.createElement('input');
+        colorInp.type = 'color';
+        colorInp.value = (def.color && def.color !== 'auto') ? def.color : '#ffffff';
+        colorInp.disabled = isAuto;
+        colorInp.style.cssText = 'width:42px;height:26px;border:1px solid var(--divider-color,#ccc);border-radius:4px;cursor:pointer;background:transparent;padding:0;' + (isAuto ? 'opacity:0.4;' : '');
+        autoBox.addEventListener('pointerdown', (e) => e.stopPropagation());
+        colorInp.addEventListener('pointerdown', (e) => e.stopPropagation());
+        autoBox.onchange = (e) => {
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            if (e.target.checked) {
+                delete next.color;
+                colorInp.disabled = true;
+                colorInp.style.opacity = '0.4';
+            } else {
+                next.color = colorInp.value;
+                colorInp.disabled = false;
+                colorInp.style.opacity = '';
+            }
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+        };
+        colorInp.oninput = (e) => {
+            if (autoBox.checked) return;
+            this._leUpdateLayoutEl(mode, selKey, { color: e.target.value });
+            this._leRenderGridEls(mode);
+        };
+        colorRow.appendChild(autoChk);
+        colorRow.appendChild(colorInp);
+        colorWrap.appendChild(colorLbl);
+        colorWrap.appendChild(colorRow);
+        box.appendChild(colorWrap);
+
+        // Reset-Button
+        const btnReset = document.createElement('button');
+        btnReset.textContent = 'Zurücksetzen';
+        btnReset.style.cssText = 'padding:6px 10px;border-radius:4px;border:1px solid var(--divider-color,#ccc);cursor:pointer;font-size:11px;background:transparent;color:inherit;align-self:flex-end;margin-left:auto;';
+        btnReset.onclick = () => {
+            const cur = (this._leLayouts[mode] && this._leLayouts[mode][selKey]) || {};
+            const next = { ...cur };
+            delete next.fontSize;
+            delete next.fontFamily;
+            delete next.color;
+            this._leReplaceLayoutEl(mode, selKey, next);
+            this._leRenderGridEls(mode);
+            this._leRenderTextControls(mode);
+        };
+        box.appendChild(btnReset);
+    }
+
+    // Immutable Update für ein Layout-Element
+    _leUpdateLayoutEl(mode, key, partial) {
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const oldLayout = this._leLayouts[mode];
+        const oldEntry  = oldLayout[key] || {};
+        this._leLayouts[mode] = { ...oldLayout, [key]: { ...oldEntry, ...partial } };
+    }
+    _leDeleteLayoutEl(mode, key) {
+        if (!this._leLayouts[mode]) return;
+        const newLayout = { ...this._leLayouts[mode] };
+        delete newLayout[key];
+        this._leLayouts[mode] = newLayout;
+    }
+    _leReplaceLayoutEl(mode, key, fullDef) {
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        this._leLayouts[mode] = { ...this._leLayouts[mode], [key]: fullDef };
+    }
+
+    _leSaveLayout(mode) {
+        if (!this._leLayouts[mode]) return;
+        const key = mode === 'tv' ? 'tv_layout' : 'media_layout';
+        this._up(key, JSON.parse(JSON.stringify(this._leLayouts[mode])));
+    }
+
+    _leLoadLayout(mode) {
+        const key = mode === 'tv' ? 'tv_layout' : 'media_layout';
+        const saved = this._config && this._config[key];
+        const defs = hcv2DefaultLayout(mode);
+        if (!saved) return JSON.parse(JSON.stringify(defs));
+        const merged = JSON.parse(JSON.stringify(defs));
+        Object.keys(saved).forEach(k => { merged[k] = { ...merged[k], ...saved[k] }; });
+        return merged;
+    }
+
+    _leRenderGridEls(mode) {
+        const grid = this._leGridEl;
+        if (!grid) return;
+        grid.querySelectorAll('.le-el').forEach(el => el.remove());
+        const layout = this._leLayouts[mode] || (this._leLayouts[mode] = this._leLoadLayout(mode));
+        Object.entries(layout).forEach(([key, def]) => {
+            if (!def.visible) return;
+            const cat = hcv2CatalogFor(key, def);
+            if (!cat) return;
+            grid.appendChild(this._leCreateEl(key, def, cat, mode));
+        });
+        this._leCheckOverlaps(mode);
+        this._leRenderPanelControls(mode);
+        this._leRenderLineControls(mode);
+        this._leRenderTextControls(mode);
+    }
+
+    _leCheckOverlaps(mode) {
+        const grid = this._leGridEl;
+        if (!grid) return;
+        const layout = this._leLayouts[mode] || {};
+        const els = [...grid.querySelectorAll('.le-el')];
+        const rects = els.map(el => {
+            const key = el.dataset.key;
+            if (hcv2IsPanel(key) || hcv2IsLine(key)) return null;
+            const def = layout[key];
+            if (!def) return null;
+            const cat = hcv2CatalogFor(key, def);
+            if (!cat) return null;
+            const w = def.w || cat.w;
+            const h = def.h || cat.h;
+            return { el, x1: def.left, y1: def.top, x2: def.left + w, y2: def.top + h };
+        }).filter(Boolean);
+        els.forEach(el => { el.style.border = '1px solid rgba(255,255,255,0.3)'; });
+        for (let i = 0; i < rects.length; i++) {
+            for (let j = i + 1; j < rects.length; j++) {
+                const a = rects[i], b = rects[j];
+                if (a.x2 > b.x1 && a.x1 < b.x2 && a.y2 > b.y1 && a.y1 < b.y2) {
+                    a.el.style.border = '2px solid #ff3333';
+                    b.el.style.border = '2px solid #ff3333';
+                }
             }
         }
-        this._config = cfg;
-        this._dispatch();
-        this._buildDOM();
+    }
+
+    _leRenderPaletteItems(mode, container) {
+        if (!container) return;
+        container.innerHTML = '';
+        const layout = this._leLayouts[mode] || {};
+        HCV2_MODE_ELEMS[mode].forEach(catalogKey => {
+            const cat = HCV2_ELEM_CATALOG[catalogKey];
+            const lKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+            const placed = layout[lKey];
+            const isPlaced = catalogKey !== 'panel' && catalogKey !== 'line' && placed && placed.visible &&
+                (lKey !== 'logo' || (
+                    catalogKey === 'logo_xl' ? placed.h >= 42
+                    : catalogKey === 'logo_l' ? (placed.h >= 35 && placed.h < 42)
+                    : catalogKey === 'logo_m' ? (placed.h >= 30 && placed.h < 35)
+                    : placed.h < 30
+                ));
+            const item = document.createElement('div');
+            const isIconPal = (catalogKey === 'power' || catalogKey === 'menu' || catalogKey.startsWith('logo'));
+            item.style.cssText = [
+                'padding:4px 10px;border-radius:5px;border:1px solid rgba(255,255,255,0.25);',
+                `background:${cat.color};color:${cat.fg};`,
+                'font-size:11px;font-weight:600;cursor:grab;user-select:none;',
+                isIconPal ? 'white-space:pre-line;text-align:center;line-height:1.3;' : 'white-space:nowrap;',
+                `opacity:${isPlaced ? '0.35' : '1'};transition:opacity .15s;touch-action:none;`,
+            ].join('');
+            item.textContent = isIconPal ? (cat.label + '\n' + cat.w + '×' + cat.h) : (cat.label + ' ' + cat.w + '×' + cat.h);
+            item.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                this._leStartDrag(e, catalogKey, item, mode);
+            });
+            container.appendChild(item);
+        });
+    }
+
+    _leCreateEl(key, def, cat, mode) {
+        const S = this._leScale;
+        const isIcon   = (key === 'power' || key === 'logo' || key === 'menu');
+        const isPanel  = hcv2IsPanel(key);
+        const isLine   = hcv2IsLine(key);
+        const isText   = hcv2IsTextEl(key);
+        const isTime   = (key === 'time');
+        const isSelectedPanel = isPanel && this._leSelectedPanel === key;
+        const isSelectedLine  = isLine  && this._leSelectedLine === key;
+        const isSelectedText  = isText  && this._leSelectedTextEl === key;
+        const w = def.w || cat.w;
+        const h = def.h || cat.h;
+        const timeRight = isTime && (def.left + w > this._dispW * 0.55);
+        const align = isIcon ? 'center' : (timeRight ? 'flex-end' : 'flex-start');
+        const pad   = isIcon ? '' : (timeRight ? 'padding-right:10px;' : 'padding-left:10px;');
+        const el = document.createElement('div');
+        el.className = 'le-el';
+        el.dataset.key = key;
+        const bgColor = isPanel ? hcv2PanelBg(def)
+                      : isLine  ? (def.color || '#888888')
+                      : cat.color;
+        const radius  = isPanel ? (((def.radius != null) ? def.radius : 8) + 'px')
+                      : isLine  ? '0'
+                      : '3px';
+        const zIdx    = (isPanel || isLine) ? '1' : '2';
+        const lineRot = isLine ? (def.rotation || 0) : 0;
+        const transformStr = lineRot ? `transform:rotate(${lineRot}deg);transform-origin:center center;` : '';
+        el.style.cssText = [
+            'position:absolute;',
+            `left:${def.left * S}px;top:${def.top * S}px;`,
+            `width:${w * S}px;height:${h * S}px;`,
+            `background:${bgColor};color:${cat.fg};`,
+            'font-size:10px;font-weight:700;',
+            `display:flex;align-items:center;justify-content:${align};`,
+            isIcon ? 'flex-direction:column;text-align:center;' : '',
+            pad,
+            transformStr,
+            `border-radius:${radius};cursor:grab;user-select:none;touch-action:none;`,
+            `box-sizing:border-box;z-index:${zIdx};overflow:${isLine ? 'visible' : 'hidden'};white-space:nowrap;`,
+            (isPanel || isLine)
+                ? ((isSelectedPanel || isSelectedLine)
+                    ? 'border:2px solid #03a9f4;box-shadow:0 0 0 3px rgba(3,169,244,0.35);'
+                    : 'border:1px dashed rgba(255,255,255,0.6);')
+                : (isSelectedText
+                    ? 'border:2px solid #03a9f4;box-shadow:0 0 0 3px rgba(3,169,244,0.35);'
+                    : 'border:1px solid rgba(255,255,255,0.3);'),
+        ].join('');
+        const catalogKey = key === 'logo'
+            ? (h >= 42 ? 'logo_xl' : h >= 35 ? 'logo_l' : h >= 30 ? 'logo_m' : 'logo_s')
+            : (isPanel ? 'panel' : (isLine ? 'line' : key));
+        const labelEl = document.createElement('div');
+        labelEl.className = 'le-el-label';
+        labelEl.style.pointerEvents = 'none';
+        if (isIcon) {
+            labelEl.innerHTML = `<div style="line-height:1.1">${cat.label}</div><div style="font-size:9px;opacity:0.8;margin-top:1px">${w}×${h}</div>`;
+        } else if (!isLine) {
+            labelEl.textContent = cat.label + ' ' + w + '×' + h;
+        }
+        if (!isLine) el.appendChild(labelEl);
+        const resizeH = document.createElement('div');
+        resizeH.className = 'le-el-resize';
+        resizeH.style.cssText = [
+            'position:absolute;right:0;bottom:0;width:12px;height:12px;',
+            'background:rgba(255,255,255,0.85);',
+            'border-left:1px solid rgba(0,0,0,0.5);border-top:1px solid rgba(0,0,0,0.5);',
+            'cursor:nwse-resize;z-index:10;touch-action:none;',
+            'box-sizing:border-box;',
+        ].join('');
+        resizeH.title = 'Größe ändern';
+        resizeH.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._leStartResize(e, key, el, mode);
+        });
+        el.appendChild(resizeH);
+        el.addEventListener('pointerdown', (e) => {
+            if (e.target === resizeH) return;
+            e.preventDefault();
+            if (isPanel && this._leSelectedPanel !== key) {
+                this._leSelectedPanel = key;
+                this._leRenderPanelControls(mode);
+                this._leRenderGridEls(mode);
+            }
+            if (isLine && this._leSelectedLine !== key) {
+                this._leSelectedLine = key;
+                this._leRenderLineControls(mode);
+                this._leRenderGridEls(mode);
+            }
+            if (isText && this._leSelectedTextEl !== key) {
+                this._leSelectedTextEl = key;
+                this._leRenderTextControls(mode);
+                this._leRenderGridEls(mode);
+            }
+            this._leStartDrag(e, catalogKey, el, mode);
+        });
+        return el;
+    }
+
+    _leStartResize(e, key, el, mode) {
+        const S = this._leScale;
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = this._leLayouts[mode];
+        const def = layout[key];
+        if (!def) return;
+        const cat0 = hcv2CatalogFor(key, def);
+        const startW = def.w || (cat0 && cat0.w) || 30;
+        const startH = def.h || (cat0 && cat0.h) || 14;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const isLine = hcv2IsLine(key);
+        const minW   = isLine ? 1 : HCV2_COL_W * 2;
+        const minH   = isLine ? 1 : HCV2_ROW_H * 2;
+        const maxW   = this._dispW - def.left;
+        const maxH   = isLine ? 20 : (this._dispH - def.top);
+        const lineRot = isLine ? ((def.rotation || 0) * Math.PI / 180) : 0;
+        const cosR = Math.cos(lineRot), sinR = Math.sin(lineRot);
+
+        const labelEl = el.querySelector('.le-el-label');
+        const isIcon  = (key === 'power' || key === 'logo' || key === 'menu');
+
+        const calcSize = (ev) => {
+            const dxS = (ev.clientX - startX) / S;
+            const dyS = (ev.clientY - startY) / S;
+            const dx = isLine ? (dxS * cosR + dyS * sinR) : dxS;
+            const dy = isLine ? (-dxS * sinR + dyS * cosR) : dyS;
+            let w, h;
+            if (isLine) {
+                w = Math.max(minW, Math.min(maxW, Math.round(startW + dx)));
+                h = Math.max(minH, Math.min(maxH, Math.round(startH + dy)));
+            } else {
+                w = Math.max(minW, Math.min(maxW, Math.round((startW + dx) / HCV2_COL_W) * HCV2_COL_W));
+                h = Math.max(minH, Math.min(maxH, Math.round((startH + dy) / HCV2_ROW_H) * HCV2_ROW_H));
+            }
+            return { w, h };
+        };
+
+        const updateLabel = (w, h) => {
+            const cat = hcv2CatalogFor(key, { ...def, h });
+            if (!cat || !labelEl) return;
+            if (isIcon) {
+                labelEl.innerHTML = `<div style="line-height:1.1">${cat.label}</div><div style="font-size:9px;opacity:0.8;margin-top:1px">${w}×${h}</div>`;
+            } else {
+                labelEl.textContent = cat.label + ' ' + w + '×' + h;
+            }
+        };
+
+        const onMove = (ev) => {
+            const { w, h } = calcSize(ev);
+            el.style.width  = (w * S) + 'px';
+            el.style.height = (h * S) + 'px';
+            updateLabel(w, h);
+            if (this._leCoordTip) this._leCoordTip.textContent = '↔ ' + w + 'px × ' + h + 'px';
+        };
+        const onUp = (ev) => {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup',   onUp);
+            const { w, h } = calcSize(ev);
+            this._leUpdateLayoutEl(mode, key, { w, h });
+            this._leRenderGridEls(mode);
+            this._leRenderPaletteItems(mode, this._lePaletteEl);
+            if (this._leCoordTip) this._leCoordTip.textContent = '';
+        };
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup',   onUp);
+    }
+
+    _leStartDrag(e, catalogKey, sourceEl, mode) {
+        const cat = HCV2_ELEM_CATALOG[catalogKey];
+        if (!cat) return;
+        const S = this._leScale;
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+
+        const isFromGrid = sourceEl && sourceEl.classList && sourceEl.classList.contains('le-el');
+        let layoutKey;
+        if (isFromGrid) {
+            layoutKey = sourceEl.dataset.key || catalogKey;
+        } else {
+            if (catalogKey === 'panel') {
+                let n = 1;
+                while (this._leLayouts[mode] && this._leLayouts[mode]['panel_' + n]
+                       && this._leLayouts[mode]['panel_' + n].visible !== false) n++;
+                layoutKey = 'panel_' + n;
+            } else if (catalogKey === 'line') {
+                let n = 1;
+                while (this._leLayouts[mode] && this._leLayouts[mode]['line_' + n]
+                       && this._leLayouts[mode]['line_' + n].visible !== false) n++;
+                layoutKey = 'line_' + n;
+            } else if (catalogKey.startsWith('logo')) {
+                layoutKey = 'logo';
+            } else {
+                layoutKey = catalogKey;
+            }
+        }
+
+        let dragW = cat.w, dragH = cat.h, dragRot = 0;
+        if (isFromGrid) {
+            const existing = this._leLayouts[mode] && this._leLayouts[mode][layoutKey];
+            if (existing && existing.visible !== false) {
+                dragW = existing.w || cat.w;
+                dragH = existing.h || cat.h;
+                if (hcv2IsLine(layoutKey)) dragRot = existing.rotation || 0;
+            }
+        }
+
+        const offsetX = dragW * S / 2;
+        const offsetY = dragH * S / 2;
+
+        this._leDrag = { catalogKey, layoutKey, offsetX, offsetY, mode, w: dragW, h: dragH, rot: dragRot };
+
+        const grid = this._leGridEl;
+
+        const onMove = (ev) => {
+            if (!grid) return;
+            const gr = grid.getBoundingClientRect();
+            const relX = ev.clientX - gr.left - offsetX;
+            const relY = ev.clientY - gr.top  - offsetY;
+            const dispW = this._dispW, dispH = this._dispH;
+            const inGrid = relX > -dragW * S * 0.5 && relX < dispW * S - dragW * S * 0.5 &&
+                           relY > -dragH * S * 0.5 && relY < dispH * S - dragH * S * 0.5;
+            const sp = this._leSnapPrev;
+            if (inGrid && sp) {
+                const sl = Math.max(0, Math.min(dispW - dragW, Math.round((relX / S) / HCV2_COL_W) * HCV2_COL_W));
+                const st = Math.max(0, Math.min(dispH - dragH, Math.round((relY / S) / HCV2_ROW_H) * HCV2_ROW_H));
+                sp.style.display = 'block';
+                sp.style.left    = (sl * S) + 'px';
+                sp.style.top     = (st * S) + 'px';
+                sp.style.width   = (dragW * S) + 'px';
+                sp.style.height  = (dragH * S) + 'px';
+                sp.style.transform = dragRot ? `rotate(${dragRot}deg)` : '';
+                sp.style.transformOrigin = 'center center';
+                if (this._leCoordTip) this._leCoordTip.textContent = '→ x: ' + sl + 'px  y: ' + st + 'px';
+            } else {
+                if (sp) sp.style.display = 'none';
+                if (this._leCoordTip) this._leCoordTip.textContent = '';
+            }
+        };
+        const onUp = (ev) => {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup',   onUp);
+            if (this._leSnapPrev) this._leSnapPrev.style.display = 'none';
+            this._leDrop(ev, catalogKey, offsetX, offsetY, mode, dragW, dragH, layoutKey);
+            this._leDrag = null;
+            if (this._leCoordTip) this._leCoordTip.textContent = '';
+        };
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup',   onUp);
+    }
+
+    _leDrop(e, catalogKey, offsetX, offsetY, mode, dragW, dragH, layoutKey) {
+        const grid = this._leGridEl;
+        if (!grid) return;
+        const cat = HCV2_ELEM_CATALOG[catalogKey];
+        if (!layoutKey) {
+            layoutKey = catalogKey.startsWith('logo') ? 'logo' : catalogKey;
+        }
+        const S         = this._leScale;
+        const gr        = grid.getBoundingClientRect();
+        const relX      = e.clientX - gr.left - offsetX;
+        const relY      = e.clientY - gr.top  - offsetY;
+        const w         = dragW || cat.w;
+        const h         = dragH || cat.h;
+
+        if (!this._leLayouts[mode]) this._leLayouts[mode] = this._leLoadLayout(mode);
+        const layout = { ...this._leLayouts[mode] };
+
+        const dispW = this._dispW, dispH = this._dispH;
+        const inGrid = relX > -w * S * 0.5 && relX < dispW * S - w * S * 0.5 &&
+                       relY > -h * S * 0.5 && relY < dispH * S - h * S * 0.5;
+        if (inGrid) {
+            const left = Math.max(0, Math.min(dispW - w, Math.round((relX / S) / HCV2_COL_W) * HCV2_COL_W));
+            const top  = Math.max(0, Math.min(dispH - h, Math.round((relY / S) / HCV2_ROW_H) * HCV2_ROW_H));
+            const prev = layout[layoutKey] || {};
+            layout[layoutKey] = { ...prev, left, top, w, h, visible: true };
+        } else {
+            delete layout[layoutKey];
+        }
+
+        this._leLayouts[mode] = layout;
+        this._leRenderGridEls(mode);
+        this._leRenderPaletteItems(mode, this._lePaletteEl);
     }
 
     _up(key, val) {
