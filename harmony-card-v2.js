@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.5.2';
+const HCV2_VERSION = '2.6.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -84,6 +84,7 @@ function _svg(key, sz, fill) {
 const HCV2_FALLBACKS = {
     vol_up:'VolumeUp', vol_down:'VolumeDown', mute:'Mute',
     ch_up:'ChannelUp', ch_down:'ChannelDown',
+    ch_prev:['ChannelPrev','PreviousChannel','Last'],
     dir_up:'DirectionUp', dir_down:'DirectionDown',
     dir_left:'DirectionLeft', dir_right:'DirectionRight',
     ok:['OK','Select','Enter'], back:['Back','Return','Exit'],
@@ -242,6 +243,7 @@ class HarmonyCardV2 extends HTMLElement {
         this._conf    = { Devices: {}, Activities: {} };
         this._lastAct = null;
         this._playing = false;
+        this._rendered = false;   // force full rebuild — pills/slots/accent are per-hub
         this._loadConf();
     }
 
@@ -261,29 +263,26 @@ class HarmonyCardV2 extends HTMLElement {
 
     _renderHubBar() {
         const root = this.shadowRoot;
-        const bar  = root && root.getElementById('hcv2-hubbar');
-        if (!bar) return;                       // flat skin only
+        const chip = root && root.getElementById('hcv2-hub-current');
+        if (!chip) return;                      // flat skin only
         const hubs = this._getHubs();
-        if (hubs.length < 2) { bar.style.display = 'none'; return; }
-        bar.style.display = '';
+        if (hubs.length < 2) { chip.style.display = 'none'; return; }
+        chip.style.display = 'flex';
         const idx = Math.max(0, Math.min(hubs.length - 1, this._activeHubIndex || 0));
         const hub = hubs[idx] || {};
         const nameEl = root.getElementById('hcv2-hub-name');
         if (nameEl) nameEl.textContent = hub.name || ('Hub ' + (idx + 1));
+        // Dot color: online → hub color (fallback green), offline → red
+        const dotColor = (h, on) => on ? ((h && h.color) || '#22c55e') : '#ef4444';
         const dot = root.getElementById('hcv2-hub-dot');
-        if (dot) {
-            const online = this._isHubOnline(hub);
-            dot.classList.toggle('online', online);
-            dot.classList.toggle('offline', !online);
-        }
+        if (dot) dot.style.background = dotColor(hub, this._isHubOnline(hub));
         // Rebuild dropdown only while closed (avoids click races)
-        const cur = root.getElementById('hcv2-hub-current');
-        const dd  = root.getElementById('hcv2-hub-dd');
-        if (dd && cur && !cur.classList.contains('open')) {
+        const dd = root.getElementById('hcv2-hub-dd');
+        if (dd && !chip.classList.contains('open')) {
             dd.innerHTML = hubs.map((h, i) => {
                 const on = this._isHubOnline(h);
                 return `<div class="hub-dd-item${i === idx ? ' active' : ''}" data-hub="${i}">
-                    <span class="hub-dot ${on ? 'online' : 'offline'}"></span>
+                    <span class="hub-dot" style="background:${_e(dotColor(h, on))}"></span>
                     <span>${_e(h.name || ('Hub ' + (i + 1)))}</span>
                 </div>`;
             }).join('');
@@ -394,6 +393,20 @@ class HarmonyCardV2 extends HTMLElement {
         return btnIds.some(id => actBtns[id] || gb[id]);
     }
 
+    // True when btnId is mapped for the current activity or globally.
+    // Special case: 'info' also counts as mapped when 'dvr_3' is mapped
+    // (legacy DVR info slot — _doCmd falls back to it accordingly).
+    _btnMapped(btnId) {
+        if (!this.config || !this.config.buttons) return false;
+        const act     = this._lastAct;
+        const actBtns = act && act !== 'PowerOff' && this.config.buttons[act]
+            ? this.config.buttons[act] : {};
+        const gb = this.config.buttons.global || {};
+        if (actBtns[btnId] || gb[btnId]) return true;
+        if (btnId === 'info') return !!(actBtns['dvr_3'] || gb['dvr_3']);
+        return false;
+    }
+
     // ── Render ───────────────────────────────────────────────────────────────
 
     _render() {
@@ -407,6 +420,9 @@ class HarmonyCardV2 extends HTMLElement {
         if (skin === 'onn')        { this._renderOnn();        return; }
         const acts    = this._activities();
         const current = this._lastAct || 'PowerOff';
+        const hub     = this._currentHub();
+        // Accent color: active hub color, falling back to the HA primary color
+        const accent  = (hub && hub.color) || 'var(--primary-color,#03a9f4)';
 
         const pillsHtml = acts.map(a => {
             const active = a.name === current;
@@ -416,78 +432,82 @@ class HarmonyCardV2 extends HTMLElement {
             return `<div class="pill${active ? ' pill--on' : ''}" data-act="${_e(a.name)}">${iconHtml}${_e(a.label)}</div>`;
         }).join('');
 
+        // Extra slots (bot_1..bot_9): one tile per configured slot, zone omitted when empty
+        const ds = this.config.dynamic_slots || {};
+        const slotBtns = [];
+        for (let i = 1; i <= 9; i++) {
+            const s = ds['bot_' + i];
+            if (!s || !s.action) continue;
+            slotBtns.push(`<button class="slot-btn" data-slot="bot_${i}">`
+                + (s.icon ? `<ha-icon icon="${_e(s.icon)}" style="--mdc-icon-size:20px;"></ha-icon>` : '')
+                + `<span>${_e(s.text || '')}</span></button>`);
+        }
+        const slotsHtml = slotBtns.length ? `<div id="hcv2-slots">${slotBtns.join('')}</div>` : '';
+
         this.shadowRoot.innerHTML = this._css() + `
 <div class="card">
-<div class="flt-remote" id="hcv2-card">
+<div class="flt-remote" id="hcv2-card" style="--hcv2-accent:${_e(accent)}">
 
-  <!-- Topbar: power · status · devices -->
-  <div class="flt-top">
-    <button class="flt-circ flt-pwr" data-btn="off">${_svg('power',20)}</button>
-    <div class="flt-st" id="hcv2-status"></div>
-    <button class="flt-circ" id="hcv2-devbtn">${_svg('devices',20)}</button>
-  </div>
-
-  <!-- Hub bar (multi-hub; hidden when < 2 hubs) -->
-  <div class="hub-bar" id="hcv2-hubbar" style="display:none">
-    <button class="hub-arrow" id="hcv2-hub-prev">${_svg('chev_left',18)}</button>
-    <div class="hub-current" id="hcv2-hub-current">
-      <span class="hub-dot" id="hcv2-hub-dot"></span>
-      <span class="hub-name" id="hcv2-hub-name">—</span>
-      <span class="hub-caret">${_svg('chev_down',16)}</span>
-      <div class="hub-dropdown" id="hcv2-hub-dd" role="menu"></div>
+  <!-- Zone 1: display (data engine follows later — DOM skeleton only) -->
+  <div class="hcv2-disp" id="hcv2-disp"${this.config.show_display === false ? ' style="display:none"' : ''}>
+    <div id="hcv2-disp-canvas">
+      <div id="hcv2-disp-bg"></div>
+      <div id="hcv2-disp-grad"></div>
+      <div id="hcv2-disp-power">${_svg('power',18)}</div>
+      <div id="hcv2-disp-dots">&#8942;</div>
+      <div id="hcv2-disp-activity"></div>
+      <div id="hcv2-disp-channel" style="display:none"></div>
+      <div id="hcv2-disp-title" style="display:none"></div>
+      <div id="hcv2-disp-time"></div>
+      <div id="hcv2-disp-timespan"></div>
+      <div id="hcv2-disp-logo"></div>
+      <div id="hcv2-disp-progress" style="display:none"><div id="hcv2-disp-progress-fill"></div></div>
     </div>
-    <button class="hub-arrow" id="hcv2-hub-next">${_svg('dir_right',18)}</button>
   </div>
-
-  <!-- Activity pills -->
-  <div class="act-scroll" id="hcv2-pills">${pillsHtml || '<span class="pill-empty">Config laden…</span>'}</div>
-
-  ${this.config.show_display ? `
-  <!-- Activity display bar -->
-  <div class="flt-display" id="hcv2-display">
-    <div class="disp-dot" id="hcv2-disp-dot"></div>
-    <span class="disp-act" id="hcv2-disp-act">Kein Gerät aktiv</span>
-  </div>` : ''}
 
   ${this._conf._err ? `<div class="conf-err">Conf-Fehler: ${_e(this._conf._err)}</div>` : ''}
 
-  <!-- Vol + CH rockers -->
-  <div class="volch" id="hcv2-volch">
-    <div class="rocker-v">
-      <button class="rb rb-top" data-btn="vol_up">${_svg('vol_up',20)}</button>
+  <!-- Zone 2: hub chip + activity pills -->
+  <div class="flt-zone2" id="hcv2-pills">
+    <div class="hub-chip" id="hcv2-hub-current" style="display:none">
+      <span class="hub-dot" id="hcv2-hub-dot"></span>
+      <span class="hub-name" id="hcv2-hub-name">&mdash;</span>
+      <span class="hub-caret">${_svg('chev_down',16)}</span>
+      <div class="hub-dropdown" id="hcv2-hub-dd" role="menu"></div>
+    </div>
+    ${pillsHtml || '<span class="pill-empty">Config laden…</span>'}
+  </div>
+
+  <!-- Zone 3: nav cluster (VOL rocker · D-pad · CH rocker) -->
+  <div class="flt-nav">
+    <div class="flt-rk">
+      <button class="rk-b rk-sign" data-btn="vol_up">+</button>
       <span class="rk-lbl">VOL</span>
-      <button class="rb rb-bot" data-btn="vol_down">${_svg('vol_down',20)}</button>
+      <button class="rk-b rk-sign" data-btn="vol_down">&minus;</button>
+      <div class="rk-sep"></div>
+      <button class="rk-b" data-btn="mute">${_svg('mute',18)}</button>
     </div>
-    <button class="fn-btn" data-btn="mute">${_svg('mute',24)}<span>Mute</span></button>
-    <div class="rocker-v">
-      <button class="rb rb-top" data-btn="ch_up">${_svg('dir_up',20)}</button>
+    <div class="flt-dpad">
+      <button class="dp-c dp-tl" data-btn="menu">${_svg('menu',16)}</button>
+      <button class="dp-c dp-tr" data-btn="exit">${_svg('exit',16)}</button>
+      <button class="dp-c dp-bl" data-btn="back">${_svg('back',16)}</button>
+      <button class="dp-c dp-br" data-btn="info">${_svg('info',16)}</button>
+      <button class="dp-a dp-up"    data-btn="dir_up">${_svg('dir_up',30)}</button>
+      <button class="dp-a dp-down"  data-btn="dir_down">${_svg('dir_down',30)}</button>
+      <button class="dp-a dp-left"  data-btn="dir_left">${_svg('dir_left',30)}</button>
+      <button class="dp-a dp-right" data-btn="dir_right">${_svg('dir_right',30)}</button>
+      <button class="dp-ok" data-btn="ok">OK</button>
+    </div>
+    <div class="flt-rk">
+      <button class="rk-b" data-btn="ch_up">${_svg('dir_up',20)}</button>
       <span class="rk-lbl">CH</span>
-      <button class="rb rb-bot" data-btn="ch_down">${_svg('dir_down',20)}</button>
+      <button class="rk-b" data-btn="ch_down">${_svg('dir_down',20)}</button>
+      <div class="rk-sep"></div>
+      <button class="rk-b" data-btn="ch_prev">${_svg('back',16)}</button>
     </div>
   </div>
 
-  <!-- D-Pad area -->
-  <div class="dpad-area">
-    <div class="fn-row" id="hcv2-exitmenu">
-      <button class="fn-btn" data-btn="exit">${_svg('exit',22)}<span>Exit</span></button>
-      <button class="fn-btn" data-btn="menu">${_svg('menu',22)}<span>Menu</span></button>
-    </div>
-    <div class="dpad">
-      <div class="dp-top"><button class="dp-btn" data-btn="dir_up">${_svg('dir_up',28)}</button></div>
-      <div class="dp-mid">
-        <button class="dp-btn" data-btn="dir_left">${_svg('dir_left',28)}</button>
-        <button class="dp-ok" data-btn="ok">OK</button>
-        <button class="dp-btn" data-btn="dir_right">${_svg('dir_right',28)}</button>
-      </div>
-      <div class="dp-bot"><button class="dp-btn" data-btn="dir_down">${_svg('dir_down',28)}</button></div>
-    </div>
-    <div class="fn-row">
-      <button class="fn-btn" data-btn="back">${_svg('back',22)}<span>Back</span></button>
-      <button class="fn-btn" data-btn="info">${_svg('info',22)}<span>Info</span></button>
-    </div>
-  </div>
-
-  <!-- Color buttons (contextual) -->
+  <!-- Zone 4: color buttons (contextual) -->
   <div class="color-row" id="hcv2-color">
     <button class="color-btn c-red"    data-btn="red"></button>
     <button class="color-btn c-green"  data-btn="green"></button>
@@ -495,49 +515,36 @@ class HarmonyCardV2 extends HTMLElement {
     <button class="color-btn c-blue"   data-btn="blue"></button>
   </div>
 
-  <!-- Transport: 3×2 grid, play/pause toggle (contextual) -->
-  <div id="hcv2-t1">
-    <div class="tp-row">
-      <button class="tp-btn" data-btn="skip_back">${_svg('skip_back',22)}</button>
-      <button class="tp-btn tp-play" id="hcv2-pp" data-btn="play">${_svg('play',28)}</button>
-      <button class="tp-btn" data-btn="skip_forward">${_svg('skip_fwd',22)}</button>
-    </div>
-    <div class="tp-row">
-      <button class="tp-btn" data-btn="rewind">${_svg('rewind',22)}</button>
-      <button class="tp-btn tp-stop" data-btn="stop">${_svg('stop',22)}</button>
-      <button class="tp-btn" data-btn="fast_forward">${_svg('fwd',22)}</button>
-    </div>
+  <!-- Zone 5: transport, single row, play/pause toggle (contextual) -->
+  <div class="tp-row" id="hcv2-t1">
+    <button class="tp-btn" data-btn="skip_back">${_svg('skip_back',20)}</button>
+    <button class="tp-btn" data-btn="rewind">${_svg('rewind',20)}</button>
+    <button class="tp-btn tp-play" id="hcv2-pp" data-btn="play">${_svg('play',24)}</button>
+    <button class="tp-btn" data-btn="fast_forward">${_svg('fwd',20)}</button>
+    <button class="tp-btn" data-btn="skip_forward">${_svg('skip_fwd',20)}</button>
+    <button class="tp-btn" data-btn="stop">${_svg('stop',20)}</button>
   </div>
 
-  <!-- Numpad (contextual, collapsible) -->
-  <div class="num-section" id="hcv2-num">
-    <button class="num-toggle" id="hcv2-numtgl">${_svg('numpad',18)} Zifferntasten
-      <svg class="chev" id="hcv2-chev" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="${_P.chev_down}"/></svg>
-    </button>
-    <div class="num-grid" id="hcv2-numgrid">
-      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="num-btn" data-btn="num_${n}">${n}</button>`).join('')}
-      <button class="num-btn" data-btn="num_minus">−</button>
-      <button class="num-btn" data-btn="num_0">0</button>
-      <button class="num-btn" data-btn="num_enter">OK</button>
+  <!-- Zone 6: extra slots (bot_N, omitted when none configured) -->
+  ${slotsHtml}
+
+  <!-- Zone 7: footer — numpad toggle (overlay opens UPWARD) + device sheet -->
+  <div class="flt-foot">
+    <div class="num-section" id="hcv2-num">
+      <button class="num-toggle" id="hcv2-numtgl">${_svg('numpad',16)}<span>Ziffern</span></button>
+      <div class="num-grid" id="hcv2-numgrid">
+        ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="num-btn" data-btn="num_${n}">${n}</button>`).join('')}
+        <button class="num-btn" data-btn="num_minus">&minus;</button>
+        <button class="num-btn" data-btn="num_0">0</button>
+        <button class="num-btn num-ok" data-btn="num_enter">OK</button>
+      </div>
     </div>
+    <button class="foot-btn" id="hcv2-devbtn">${_svg('devices',16)}<span>Geräte</span></button>
   </div>
 
 </div><!-- /flt-remote -->
 </div><!-- /card -->
-
-<!-- Device Quick Sheet -->
-<div class="sh-overlay" id="hcv2-sheet">
-  <div class="sh-backdrop" id="hcv2-bd"></div>
-  <div class="sh-panel">
-    <div class="sh-handle"></div>
-    <div class="sh-head">
-      <button class="sh-nav" id="hcv2-sh-back" style="visibility:hidden">${_svg('chev_left',22)}</button>
-      <span class="sh-title" id="hcv2-sh-title">Gerät wählen</span>
-      <button class="sh-nav" id="hcv2-sh-close">${_svg('close',22)}</button>
-    </div>
-    <div class="sh-body" id="hcv2-sh-body"></div>
-  </div>
-</div>
+${this._sheetHtml()}
 `;
         this._bindEvents();
         this._updateLive();
@@ -558,47 +565,71 @@ class HarmonyCardV2 extends HTMLElement {
             el.classList.toggle('act-pill--on', on);
         });
 
-        // Status row
+        // Status row (non-flat skins only — flat shows the activity in the display zone)
         const sr = root.getElementById('hcv2-status');
-        if (sr) {
-            if (activeSkin && activeSkin !== 'flat') {
-                sr.textContent = isOn ? current : '';
-            } else {
-                sr.innerHTML = `
-              <div class="st-dot ${isOn ? 'dot-on' : 'dot-off'}"></div>
-              <span class="st-txt">${_e(isOn ? current : 'Kein Gerät aktiv')}</span>
-            `;
-            }
-        }
+        if (sr && activeSkin && activeSkin !== 'flat') sr.textContent = isOn ? current : '';
 
-        // Activity display bar (flat skin, show_display: true)
-        const dispAct = root.getElementById('hcv2-disp-act');
-        const dispDot = root.getElementById('hcv2-disp-dot');
-        if (dispAct) dispAct.textContent = isOn ? current : 'Kein Gerät aktiv';
-        if (dispDot) dispDot.classList.toggle('disp-dot--on', isOn);
-
-        // Hub bar (name + online dots)
+        // Hub chip (name + online dot + dropdown items)
         this._renderHubBar();
 
         // Reset play/pause button icon on activity change
         const pp = root.getElementById('hcv2-pp');
-        if (pp) pp.innerHTML = _svg(this._playing ? 'pause' : 'play', 28);
+        if (pp) pp.innerHTML = _svg(this._playing ? 'pause' : 'play', 24);
 
         // Zone visibility — flat skin only (non-flat skins manage their own visibility)
         const flatSkin = !activeSkin || activeSkin === 'flat';
         if (flatSkin) {
             const vis = (id, on) => { const el = root.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
-            vis('hcv2-volch',    this._zoneOn(['vol_up','vol_down','mute','ch_up','ch_down']));
-            vis('hcv2-exitmenu', this._zoneOn(['exit','menu']));
-            vis('hcv2-color',    this._zoneOn(['red','green','yellow','blue']));
-            vis('hcv2-t1',       this._zoneOn(['skip_back','rewind','play','pause','stop','fast_forward','skip_forward']));
-            vis('hcv2-num',      this._zoneOn(['num_1','num_2','num_3','num_4','num_5','num_6','num_7','num_8','num_9','num_0','num_minus','num_enter']));
+            vis('hcv2-color', this._zoneOn(['red','green','yellow','blue']));
+            vis('hcv2-t1',    this._zoneOn(['skip_back','rewind','play','pause','stop','fast_forward','skip_forward']));
+            vis('hcv2-num',   this._zoneOn(['num_1','num_2','num_3','num_4','num_5','num_6','num_7','num_8','num_9','num_0','num_minus','num_enter']));
+            // Optional buttons: dim + disable when unmapped in the current context
+            ['menu','exit','back','info','mute','ch_prev'].forEach(id => {
+                const el = root.querySelector(`[data-btn="${id}"]`);
+                if (el) el.classList.toggle('is-off', !this._btnMapped(id));
+            });
+            this._updateDisplay();
         }
         // Re-fit: active zones (and thus the remote height) just changed
         this._fitRemote();
         if (!this._fitRaf) {
             this._fitRaf = requestAnimationFrame(() => { this._fitRaf = null; this._fitRemote(); });
         }
+    }
+
+    // ── Display zone (flat skin) ──────────────────────────────────────────────
+
+    // Display height follows the V1 proportion: height = width × 147/370
+    _sizeDisplay() {
+        const el = this.shadowRoot && this.shadowRoot.getElementById('hcv2-disp');
+        if (!el) return;
+        const w = el.offsetWidth;
+        if (w) el.style.height = Math.round(w * 147 / 370) + 'px';
+    }
+
+    // Entity behind the display "more" dots: per-activity camera, else media player
+    _dispMoreEntity() {
+        const act = this._lastAct;
+        if (!act || !this.config) return null;
+        const cam = this.config.activity_camera && this.config.activity_camera[act];
+        const med = this.config.activity_media  && this.config.activity_media[act];
+        return cam || med || null;
+    }
+
+    // Stub: the full data engine (channel/title/time/logo/progress) follows in a
+    // later step. For now: activity caption + dots visibility + sizing only.
+    _updateDisplay() {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const disp = root.getElementById('hcv2-disp');
+        if (!disp) return;
+        const current = this._lastAct || 'PowerOff';
+        const isOn    = current && current !== 'PowerOff';
+        const actEl = root.getElementById('hcv2-disp-activity');
+        if (actEl) actEl.textContent = isOn ? current : 'Kein Gerät aktiv';
+        const dots = root.getElementById('hcv2-disp-dots');
+        if (dots) dots.style.display = this._dispMoreEntity() ? 'flex' : 'none';
+        this._sizeDisplay();
     }
 
     // ── Events ───────────────────────────────────────────────────────────────
@@ -619,12 +650,31 @@ class HarmonyCardV2 extends HTMLElement {
             else if (id && id.indexOf('num_') === 0) this._armNumTimer();
         });
 
-        // Status row power button (rendered dynamically — use delegation on status row)
-        root.getElementById('hcv2-status').addEventListener('click', e => {
-            const btn = e.target.closest('[data-btn]');
-            if (!btn) return;
+        // Display: power button + more-info dots (flat skin only)
+        root.getElementById('hcv2-disp-power')?.addEventListener('click', e => {
+            e.stopPropagation();
             this._vib();
-            this._doCmd(btn.dataset.btn);
+            this._doCmd('off');
+        });
+        root.getElementById('hcv2-disp-dots')?.addEventListener('click', e => {
+            e.stopPropagation();
+            const ent = this._dispMoreEntity();
+            if (!ent) return;
+            this._vib();
+            this.dispatchEvent(new CustomEvent('hass-more-info', {
+                detail: { entityId: ent }, bubbles: true, composed: true,
+            }));
+        });
+
+        // Extra slots (bot_N) — fire the configured action directly
+        root.getElementById('hcv2-slots')?.addEventListener('click', e => {
+            const btn = e.target.closest('[data-slot]');
+            if (!btn) return;
+            e.stopPropagation();
+            const slot = (this.config.dynamic_slots || {})[btn.dataset.slot];
+            if (!slot || !slot.action) return;
+            this._vib();
+            this._fire(slot.action);
         });
 
         // Activity pills
@@ -638,9 +688,7 @@ class HarmonyCardV2 extends HTMLElement {
             }).catch(() => {});
         });
 
-        // Hub bar: prev/next arrows, dropdown toggle, dropdown item select
-        root.getElementById('hcv2-hub-prev')?.addEventListener('click', e => { e.stopPropagation(); this._vib(); this._cycleHub(-1); });
-        root.getElementById('hcv2-hub-next')?.addEventListener('click', e => { e.stopPropagation(); this._vib(); this._cycleHub(+1); });
+        // Hub chip: dropdown toggle + dropdown item select
         const hubCur = root.getElementById('hcv2-hub-current');
         if (hubCur) {
             hubCur.addEventListener('click', e => {
@@ -672,7 +720,7 @@ class HarmonyCardV2 extends HTMLElement {
             const cmd = this._playing ? 'pause' : 'play';
             this._doCmd(cmd);
             this._playing = !this._playing;
-            e.currentTarget.innerHTML = _svg(this._playing ? 'pause' : 'play', 28);
+            e.currentTarget.innerHTML = _svg(this._playing ? 'pause' : 'play', 24);
         });
 
         // Numpad toggle — opens the upward overlay, OK or 5s inactivity closes it
@@ -908,7 +956,9 @@ class HarmonyCardV2 extends HTMLElement {
         const actMap = act !== 'PowerOff' && this.config.buttons && this.config.buttons[act]
             ? this.config.buttons[act] : {};
         const gb     = (this.config.buttons && this.config.buttons.global) || {};
-        const val    = actMap[btnId] || gb[btnId];
+        let val      = actMap[btnId] || gb[btnId];
+        // 'info' unmapped → fall back to the legacy DVR info slot 'dvr_3'
+        if (!val && btnId === 'info') val = actMap['dvr_3'] || gb['dvr_3'];
         if (val) this._fire(val);
     }
 
@@ -1180,126 +1230,118 @@ ${this._numpadCss()}</style>`; }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;}
 
-/* Outer card — thin wrapper */
-.card{background:var(--ha-card-background,var(--card-background-color,#fff));border-radius:var(--ha-card-border-radius,12px);padding:0;}
+/* Outer card — transparent wrapper, the remote body carries the chrome */
+.card{background:transparent;padding:0;}
 
-/* Remote body — physical frame.
-   The zoom is set dynamically by _fitRemote() so the whole remote always fits
-   the visible area (width AND height) on the Pixel 8 Pro. Compact vertical
-   rhythm (small gaps/padding) lets it scale wider before the height runs out. */
+/* Remote body — fills the card width (max 448px); _fitRemote() scales via zoom.
+   --hcv2-accent (hub color) is set inline on this element by _render(). */
 .flt-remote{
-  background:var(--secondary-background-color,#f0f0f2);
+  background:#101218;
   border-radius:28px;
-  max-width:272px;margin:0 auto;
-  padding:12px 12px 14px;
-  display:flex;flex-direction:column;align-items:center;gap:7px;
-  box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.10)),inset 0 1px 0 rgba(255,255,255,.4);
+  width:100%;max-width:448px;margin:0 auto;
+  padding:12px;
+  display:flex;flex-direction:column;gap:16px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.04),0 10px 36px rgba(0,0,0,.5);
 }
 
-/* Topbar */
-.flt-top{width:100%;display:flex;align-items:center;justify-content:space-between;}
-.flt-circ{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.06);display:flex;align-items:center;justify-content:center;color:var(--secondary-text-color,#666);transition:background .12s;}
-.flt-circ:active{background:rgba(0,0,0,.14);}
-.flt-pwr{color:#ef4444;}
-.flt-st{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;}
+/* Zone 1 — display (height = width × 147/370, set by _sizeDisplay()) */
+.hcv2-disp{position:relative;width:100%;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#30344a 0%,#1d2030 100%);}
+#hcv2-disp-canvas{position:absolute;inset:0;}
+#hcv2-disp-bg{position:absolute;inset:0;background-size:cover;background-position:center;display:none;}
+#hcv2-disp-grad{position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,18,24,0) 35%,rgba(16,18,24,.55) 100%);}
+#hcv2-disp-power{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.10);display:flex;align-items:center;justify-content:center;color:#dfe5f0;cursor:pointer;transition:background .12s;}
+#hcv2-disp-power:active{background:rgba(255,255,255,.20);}
+#hcv2-disp-dots{position:absolute;right:4px;top:4px;width:32px;height:32px;border-radius:50%;display:none;align-items:center;justify-content:center;color:#dfe5f0;font-size:18px;font-weight:700;cursor:pointer;}
+#hcv2-disp-activity{position:absolute;top:10px;left:14px;right:44px;font-size:12px;font-weight:600;color:#8a93a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hcv2-disp-channel{position:absolute;top:28px;left:14px;font-size:20px;font-weight:800;color:#dfe5f0;}
+#hcv2-disp-title{position:absolute;left:62px;right:14px;bottom:26px;font-size:13px;font-weight:700;color:#dfe5f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hcv2-disp-time{position:absolute;left:62px;bottom:10px;font-size:11px;color:#8a93a8;}
+#hcv2-disp-timespan{position:absolute;right:14px;bottom:10px;font-size:11px;color:#8a93a8;}
+#hcv2-disp-logo{position:absolute;right:12px;top:30px;display:flex;align-items:center;}
+#hcv2-disp-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.12);}
+#hcv2-disp-progress-fill{height:100%;width:0%;background:var(--hcv2-accent);}
 
-/* Activity pills — wrap to new lines instead of overflowing off-screen;
-   the auto-fit re-zooms so the taller remote still fits the display. */
-.act-scroll{width:100%;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:2px 0;}
-.pill{flex-shrink:0;height:34px;padding:0 12px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(0,0,0,.06);color:var(--secondary-text-color,#666);transition:all .15s;}
-.pill--on{background:var(--primary-color,#03a9f4);color:#fff;box-shadow:0 2px 8px color-mix(in srgb,var(--primary-color,#03a9f4) 35%,transparent);}
+/* Zone 2 — hub chip + activity pills */
+.flt-zone2{width:100%;display:flex;flex-wrap:wrap;gap:8px;}
+.hub-chip{position:relative;display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border-radius:14px;background:#1b1e29;cursor:pointer;user-select:none;}
+.hub-chip:active{background:#232736;}
+.hub-dot{width:8px;height:8px;border-radius:50%;background:#8a93a8;flex-shrink:0;}
+.hub-name{font-size:13px;font-weight:700;color:#dfe5f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;}
+.hub-caret{display:flex;color:#8a93a8;transition:transform .2s;}
+.hub-chip.open .hub-caret{transform:rotate(180deg);}
+.hub-dropdown{position:absolute;top:calc(100% + 6px);left:0;min-width:180px;background:#1d2130;border:1px solid #343b50;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.5);max-height:240px;overflow-y:auto;z-index:40;display:none;padding:4px;}
+.hub-chip.open .hub-dropdown{display:block;}
+.hub-dd-item{display:flex;align-items:center;gap:10px;height:44px;padding:0 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:#dfe5f0;transition:background .12s;}
+.hub-dd-item:active{background:rgba(255,255,255,.10);}
+.hub-dd-item.active{background:rgba(255,255,255,.07);}
+.pill{flex:1 1 30%;min-width:30%;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:#1b1e29;color:#8a93a8;transition:all .15s;overflow:hidden;}
+.pill--on{background:var(--hcv2-accent);color:#fff;}
 .pill:active{opacity:.75;}
-.pill-empty{font-size:12px;color:var(--secondary-text-color,#999);padding:0 4px;}
+.pill-empty{font-size:12px;color:#8a93a8;padding:0 4px;align-self:center;}
+.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.10);border-radius:8px;}
 
-/* Hub bar (multi-hub switcher) */
-.hub-bar{width:100%;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.05);border-radius:14px;padding:5px 8px;}
-.hub-arrow{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.06);color:var(--secondary-text-color,#666);flex-shrink:0;transition:background .12s;}
-.hub-arrow:active{background:rgba(0,0,0,.14);}
-.hub-current{flex:1;position:relative;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;height:30px;border-radius:10px;transition:background .12s;}
-.hub-current:active{background:rgba(0,0,0,.06);}
-.hub-dot{width:8px;height:8px;border-radius:50%;background:#94a3b8;flex-shrink:0;}
-.hub-dot.online{background:#22c55e;}
-.hub-dot.offline{background:#ef4444;}
-.hub-name{font-size:13px;font-weight:700;color:var(--primary-text-color,#333);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;}
-.hub-caret{display:flex;color:var(--secondary-text-color,#888);transition:transform .2s;}
-.hub-current.open .hub-caret{transform:rotate(180deg);}
-.hub-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card-background-color,#fff);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.3),0 0 0 1px var(--divider-color,rgba(0,0,0,.1));max-height:240px;overflow-y:auto;z-index:40;display:none;padding:4px;}
-.hub-current.open .hub-dropdown{display:block;}
-.hub-dd-item{display:flex;align-items:center;gap:8px;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary-text-color,#333);transition:background .12s;}
-.hub-dd-item:active{background:rgba(0,0,0,.06);}
-.hub-dd-item.active{background:rgba(3,169,244,.14);}
-
-/* Status */
-.st-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-.dot-on{background:#22c55e;animation:hcv2p 2s ease infinite;}
-.dot-off{background:#94a3b8;}
-@keyframes hcv2p{0%,100%{opacity:1}50%{opacity:.3}}
-.st-txt{font-size:11px;font-weight:600;color:var(--secondary-text-color,#666);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;}
-.conf-err{font-size:11px;color:#ef4444;padding:4px 8px;background:rgba(239,68,68,.06);border-radius:8px;}
-
-/* Activity display bar */
-.flt-display{width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;background:rgba(0,0,0,.06);min-height:38px;}
-.disp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#94a3b8;transition:background .3s;}
-.disp-dot--on{background:#22c55e;}
-.disp-act{font-size:12px;font-weight:600;color:var(--primary-text-color,#333);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
-/* Vol/CH */
-.volch{display:flex;align-items:center;justify-content:center;gap:10px;}
-.rocker-v{display:flex;flex-direction:column;align-items:center;background:rgba(0,0,0,.05);border-radius:20px;overflow:hidden;width:68px;}
-.rb{width:68px;height:42px;display:flex;align-items:center;justify-content:center;color:var(--primary-text-color,#333);transition:background .1s;}
-.rb-top{border-radius:20px 20px 0 0;}.rb-bot{border-radius:0 0 20px 20px;}
-.rb:active{background:rgba(0,0,0,.10);}
-.rk-lbl{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--secondary-text-color,#888);padding:1px 0;line-height:1;}
-.fn-btn{width:60px;height:60px;border-radius:18px;background:rgba(0,0,0,.05);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--primary-text-color,#333);font-size:9px;font-weight:700;transition:background .12s;}
-.fn-btn:active{background:rgba(0,0,0,.10);}
-
-/* D-Pad */
-.dpad-area{display:flex;flex-direction:column;align-items:center;gap:8px;}
-.fn-row{display:flex;gap:10px;justify-content:center;}
-.dpad{display:flex;flex-direction:column;align-items:center;gap:2px;background:rgba(0,0,0,.04);border-radius:26px;padding:8px;width:206px;}
-.dp-top,.dp-bot{display:flex;justify-content:center;width:100%;}
-.dp-mid{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;}
-.dp-btn{width:58px;height:58px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--primary-text-color,#333);transition:background .1s;}
-.dp-btn:active{background:rgba(0,0,0,.10);}
-.dp-ok{width:70px;height:58px;border-radius:20px;background:var(--primary-color,#03a9f4);color:#fff;font-size:16px;font-weight:900;box-shadow:0 3px 10px color-mix(in srgb,var(--primary-color,#03a9f4) 30%,transparent);transition:opacity .1s;}
+/* Zone 3 — nav cluster: VOL rocker · D-pad · CH rocker */
+.flt-nav{width:100%;display:flex;gap:10px;align-items:stretch;}
+.flt-rk{width:74px;flex-shrink:0;background:#1b1e29;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:10px 0;}
+.rk-b{width:100%;height:44px;display:flex;align-items:center;justify-content:center;color:#dfe5f0;transition:background .1s;}
+.rk-b:active{background:rgba(255,255,255,.08);}
+.rk-sign{font-size:22px;font-weight:600;}
+.rk-lbl{font-size:10px;font-weight:700;letter-spacing:.5px;color:#666e80;line-height:1;}
+.rk-sep{width:32px;height:1px;background:#2e3342;flex-shrink:0;}
+.flt-dpad{flex:1;position:relative;background:#171a23;border-radius:22px;height:300px;}
+.dp-c{position:absolute;width:48px;height:48px;border-radius:50%;background:#232736;display:flex;align-items:center;justify-content:center;color:#dfe5f0;transition:background .1s;}
+.dp-c:active{background:#2e3342;}
+.dp-tl{top:10px;left:10px;} .dp-tr{top:10px;right:10px;}
+.dp-bl{bottom:10px;left:10px;} .dp-br{bottom:10px;right:10px;}
+.dp-a{position:absolute;width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#dfe5f0;transition:background .1s;}
+.dp-a:active{background:rgba(255,255,255,.08);}
+.dp-up{top:6px;left:50%;transform:translateX(-50%);}
+.dp-down{bottom:6px;left:50%;transform:translateX(-50%);}
+.dp-left{left:6px;top:50%;transform:translateY(-50%);}
+.dp-right{right:6px;top:50%;transform:translateY(-50%);}
+.dp-ok{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:108px;height:92px;border-radius:24px;background:var(--hcv2-accent);color:#fff;font-size:18px;font-weight:800;transition:opacity .1s;}
 .dp-ok:active{opacity:.8;}
+.is-off{opacity:.22;pointer-events:none;}
 
-/* Color row */
-.color-row{display:flex;gap:8px;justify-content:center;}
-.color-btn{width:52px;height:28px;border-radius:8px;transition:opacity .1s;}
+/* Zone 4 — color buttons */
+.color-row{width:100%;display:flex;gap:8px;}
+.color-btn{flex:1;height:48px;border-radius:12px;transition:opacity .1s;}
 .color-btn:active{opacity:.75;}
-.c-red{background:#ef4444;}.c-green{background:#22c55e;}.c-yellow{background:#eab308;}.c-blue{background:#3b82f6;}
+.c-red{background:#d94c4c;}.c-green{background:#4f9e44;}.c-yellow{background:#e0a32e;}.c-blue{background:#3f7fd9;}
 
-/* Transport 3×2 */
-#hcv2-t1{display:flex;flex-direction:column;gap:6px;width:100%;}
-.tp-row{display:flex;gap:6px;justify-content:center;}
-.tp-btn{flex:1;max-width:80px;height:52px;border-radius:15px;background:rgba(0,0,0,.05);display:flex;align-items:center;justify-content:center;color:var(--primary-text-color,#333);transition:background .1s;}
-.tp-btn:active{background:rgba(0,0,0,.10);}
-.tp-play{background:rgba(3,169,244,.08);color:var(--primary-color,#03a9f4);}
-.tp-play:active{background:rgba(3,169,244,.16);}
-.tp-stop{background:rgba(0,0,0,.05);}
+/* Zone 5 — transport (single row, play/pause grows) */
+.tp-row{width:100%;display:flex;gap:8px;}
+.tp-btn{flex:1;height:52px;border-radius:12px;background:#1b1e29;display:flex;align-items:center;justify-content:center;color:#dfe5f0;transition:background .1s;}
+.tp-btn:active{background:#232736;}
+.tp-play{flex:1.3;background:color-mix(in srgb,var(--hcv2-accent) 40%,#1b1e29);color:#fff;}
 
-/* Numpad — opens UPWARD as a floating overlay (no layout growth, no scroll) */
-.num-section{position:relative;display:flex;flex-direction:column;gap:0;width:100%;}
-.num-toggle{display:flex;align-items:center;gap:6px;height:44px;padding:0 14px;border-radius:13px;background:rgba(0,0,0,.04);font-size:13px;font-weight:600;color:var(--secondary-text-color,#666);transition:background .12s;width:100%;}
-.num-toggle:active{background:rgba(0,0,0,.10);}
-.num-toggle.open{background:rgba(0,0,0,.10);}
-.chev{margin-left:auto;transition:transform .2s;}
+/* Zone 6 — extra slots (bot_N) */
+#hcv2-slots{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:8px;}
+.slot-btn{height:58px;border-radius:12px;background:#1b1e29;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#cdd4e2;transition:background .1s;}
+.slot-btn:active{background:#232736;}
+.slot-btn span{font-size:11px;font-weight:600;max-width:95%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* Zone 7 — footer; numpad opens UPWARD as a floating overlay anchored to it */
+.flt-foot{position:relative;width:100%;display:flex;gap:8px;}
+.num-section{flex:1;display:flex;}
+.num-toggle,.foot-btn{flex:1;height:48px;border-radius:12px;background:#1b1e29;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:600;color:#dfe5f0;transition:background .12s;}
+.num-toggle:active,.num-toggle.open,.foot-btn:active{background:#232736;}
 .num-grid{
   display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
-  position:absolute;left:0;right:0;bottom:calc(100% + 6px);
-  background:var(--secondary-background-color,#f0f0f2);
+  position:absolute;left:0;right:0;bottom:calc(100% + 8px);
+  background:#1d2130;border:1px solid #343b50;
   padding:10px;border-radius:16px;
-  box-shadow:0 -8px 24px rgba(0,0,0,.28),0 0 0 1px var(--divider-color,rgba(0,0,0,.10));
+  box-shadow:0 -8px 24px rgba(0,0,0,.45);
   opacity:0;visibility:hidden;transform:translateY(8px);
   transition:opacity .18s ease,transform .18s ease,visibility .18s;
   z-index:30;
 }
 .num-grid.open{opacity:1;visibility:visible;transform:translateY(0);}
-.num-btn{height:54px;border-radius:13px;background:rgba(0,0,0,.06);font-size:19px;font-weight:700;color:var(--primary-text-color,#333);transition:background .1s;}
-.num-btn:active{background:rgba(0,0,0,.12);}
+.num-btn{height:56px;border-radius:12px;background:#2a2f40;font-size:18px;font-weight:700;color:#e8ecf5;transition:background .1s;}
+.num-btn:active{background:#343b50;}
+.num-ok{background:var(--hcv2-accent);color:#fff;}
 
-/* Device Quick Sheet */
+/* Device Quick Sheet (dark) */
 .sh-overlay{
   position:fixed;inset:0;z-index:9999;
   display:flex;align-items:flex-end;justify-content:center;
@@ -1312,22 +1354,22 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
   background:rgba(0,0,0,0);
   transition:background .25s;
 }
-.sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.38);}
+.sh-overlay.open .sh-backdrop{background:rgba(0,0,0,.45);}
 .sh-panel{
   position:relative;width:100%;max-width:320px;max-height:72vh;
   margin:0 auto 14px;
-  background:var(--ha-card-background,var(--card-background-color,#fff));
+  background:#1a1d27;
   border-radius:26px;
   display:flex;flex-direction:column;
   transform:translateY(120%);
   transition:transform .28s cubic-bezier(.4,0,.2,1);
   overflow:hidden;
-  box-shadow:0 0 0 1px var(--divider-color,rgba(0,0,0,.12)),0 12px 40px rgba(0,0,0,.40);
+  box-shadow:0 0 0 1px rgba(255,255,255,.08),0 12px 40px rgba(0,0,0,.55);
 }
 .sh-overlay.open .sh-panel{transform:translateY(0);}
 .sh-handle{
   width:40px;height:4px;border-radius:2px;
-  background:rgba(0,0,0,.12);
+  background:rgba(255,255,255,.14);
   align-self:center;margin:10px 0 0;flex-shrink:0;
 }
 .sh-head{
@@ -1336,22 +1378,22 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .sh-title{
   flex:1;text-align:center;
   font-size:15px;font-weight:800;
-  color:var(--primary-text-color,#333);
+  color:#f2f5fb;
 }
 .sh-nav{
   width:42px;height:42px;border-radius:13px;
   display:flex;align-items:center;justify-content:center;
-  color:var(--secondary-text-color,#666);
+  color:#8a93a8;
   transition:background .12s;
 }
-.sh-nav:active{background:rgba(0,0,0,.08);}
+.sh-nav:active{background:rgba(255,255,255,.08);}
 .sh-body{overflow-y:auto;padding:0 12px 20px;flex:1;}
 .sh-empty{
   padding:28px 0;text-align:center;
-  color:var(--secondary-text-color,#888);font-size:13px;line-height:1.6;
+  color:#8a93a8;font-size:13px;line-height:1.6;
 }
 .sh-empty small{font-size:11px;}
-.sh-empty code{background:rgba(0,0,0,.06);border-radius:4px;padding:1px 4px;}
+.sh-empty code{background:rgba(255,255,255,.07);border-radius:4px;padding:1px 4px;}
 
 /* Device list */
 .dev-row{
@@ -1359,20 +1401,20 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
   padding:15px 8px;border-radius:14px;
   cursor:pointer;transition:background .12s;
 }
-.dev-row:active{background:rgba(0,0,0,.06);}
-.dev-name{flex:1;font-size:15px;font-weight:700;color:var(--primary-text-color,#333);}
+.dev-row:active{background:rgba(255,255,255,.06);}
+.dev-name{flex:1;font-size:15px;font-weight:700;color:#e8edf5;}
 
 /* Command grid */
 .cmd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:4px 0;}
 .cmd-btn{
   min-height:64px;border-radius:16px;
-  background:rgba(0,0,0,.04);
+  background:rgba(255,255,255,.06);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
   font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;
-  color:var(--primary-text-color,#333);
+  color:#cdd6e6;
   transition:background .12s;overflow:hidden;padding:6px 4px;
 }
-.cmd-btn:active{background:rgba(0,0,0,.10);}
+.cmd-btn:active{background:rgba(255,255,255,.12);}
 .cmd-btn span{max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Device remote (dark) — same shape as the main remote, darker theme */
