@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.5.1';
+const HCV2_VERSION = '2.5.2';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -1203,10 +1203,10 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
 .flt-pwr{color:#ef4444;}
 .flt-st{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;}
 
-/* Activity pills */
-.act-scroll{width:100%;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0;}
-.act-scroll::-webkit-scrollbar{display:none;}
-.pill{flex-shrink:0;height:36px;padding:0 14px;border-radius:18px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(0,0,0,.06);color:var(--secondary-text-color,#666);transition:all .15s;}
+/* Activity pills — wrap to new lines instead of overflowing off-screen;
+   the auto-fit re-zooms so the taller remote still fits the display. */
+.act-scroll{width:100%;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:2px 0;}
+.pill{flex-shrink:0;height:34px;padding:0 12px;border-radius:17px;display:flex;align-items:center;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none;background:rgba(0,0,0,.06);color:var(--secondary-text-color,#666);transition:all .15s;}
 .pill--on{background:var(--primary-color,#03a9f4);color:#fff;box-shadow:0 2px 8px color-mix(in srgb,var(--primary-color,#03a9f4) 35%,transparent);}
 .pill:active{opacity:.75;}
 .pill-empty{font-size:12px;color:var(--secondary-text-color,#999);padding:0 4px;}
