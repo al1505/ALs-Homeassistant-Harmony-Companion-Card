@@ -2,7 +2,7 @@
 // ALs HARMONY CARD V2
 // Mobile-first HA custom card for Logitech Harmony Hub
 // Pixel 8 Pro · Device Quick Sheet · No editor · Same config schema as V1
-// Version: 2.0.0
+// Version: 2.7.0
 // ============================================================================
 // SETUP:
 //   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.6.0';
+const HCV2_VERSION = '2.7.0';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -104,8 +104,96 @@ const HCV2_FALLBACKS = {
     num_enter:['Enter','Select','OK'],
 };
 
+// ── Display engine constants (ported from V1) ───────────────────────────────
+// Design canvas 320×126 plus configurable offset → effective 370×147 px default.
+const HCV2_BASE_W           = 320;
+const HCV2_BASE_H           = 126;
+const HCV2_DEFAULT_OFFSET_W = 50;
+const HCV2_DEFAULT_OFFSET_H = 21;
+// Default smoked-glass background color of the display zone
+const HCV2_DEFAULT_DISPLAY_BG = '#2A2A3C';
+
+// Fallback TV icon (SVG data URI) for the logo slot when no picon can be loaded
+const HCV2_TV_ICON = 'url("data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' +
+    '<path fill="rgba(255,255,255,0.55)" d="M21,17H3V5H21M21,3H3C1.89,3 1,3.89 1,5V17A2,2 0 0,0 3,19' +
+    'H10V21H14V19H21A2,2 0 0,0 23,17V5C23,3.89 22.1,3 21,3Z"/></svg>'
+) + '")';
+
+// hex → subtle two-tone glass gradient (lighter top-left, darker bottom-right)
+function hcv2DisplayBgGradient(hex) {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || HCV2_DEFAULT_DISPLAY_BG);
+    let r = 42, g = 42, b = 60;
+    if (m) { r = parseInt(m[1],16); g = parseInt(m[2],16); b = parseInt(m[3],16); }
+    const lt = (c) => Math.min(255, Math.round(c + 22));
+    const dk = (c) => Math.max(0,   Math.round(c - 18));
+    return `linear-gradient(135deg, rgba(${lt(r)},${lt(g)},${lt(b)},0.96) 0%, rgba(${dk(r)},${dk(g)},${dk(b)},0.98) 100%)`;
+}
+
+// WCAG relative luminance (sRGB gamma corrected) — used by _extractColors()
+const _hcv2RelativeLum = (r, g, b) => {
+    const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
+
+// Layout key classification: 'panel'/'panel_N' and 'line'/'line_N'
+function hcv2IsPanel(key) { return key === 'panel' || (typeof key === 'string' && key.startsWith('panel_')); }
+function hcv2IsLine(key)  { return key === 'line'  || (typeof key === 'string' && key.startsWith('line_')); }
+const HCV2_TEXT_ELEM_KEYS = ['activity', 'channel', 'title', 'time', 'timespan', 'menu'];
+function hcv2IsTextEl(key) { return HCV2_TEXT_ELEM_KEYS.includes(key); }
+
+// hex + alpha → rgba() string for panel backgrounds
+function hcv2PanelBg(def) {
+    const hex = (def && def.bgColor) || '#404040';
+    const a   = (def && def.bgAlpha != null) ? Math.max(0, Math.min(1, def.bgAlpha)) : 0.5;
+    const m   = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    const r = m ? parseInt(m[1],16) : 64;
+    const g = m ? parseInt(m[2],16) : 64;
+    const b = m ? parseInt(m[3],16) : 64;
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+// Default layouts — fixed values for the 370×147 px design canvas (offset 50×21).
+function hcv2DefaultLayout(mode) {
+    if (mode === 'tv') return {
+        power:    { left: 0,   top: 0,   w: 25,  h: 24, visible: true },
+        menu:     { left: 345, top: 0,   w: 25,  h: 24, visible: true },
+        panel:    { left: 0,   top: 102, w: 370, h: 42, bgColor: '#6d7083', radius: 4, bgAlpha: 0.37, visible: true },
+        logo:     { left: 0,   top: 105, w: 60,  h: 36, visible: true },
+        activity: { left: 30,  top: 12,  w: 65,  h: 12, visible: true, fontSize: 12, fontFamily: 'Roboto, sans-serif' },
+        channel:  { left: 65,  top: 108, w: 140, h: 15, visible: true },
+        title:    { left: 65,  top: 126, w: 200, h: 15, visible: true },
+        time:     { left: 330, top: 117, w: 35,  h: 9,  visible: true },
+        timespan: { left: 300, top: 132, w: 65,  h: 9,  visible: true, fontSize: 10 },
+    };
+    // Kodi / media mode (no logo/channel)
+    return {
+        power:    { left: 0,   top: 0,   w: 25,  h: 24, visible: true },
+        menu:     { left: 345, top: 0,   w: 25,  h: 24, visible: true },
+        logo:     { visible: false },
+        channel:  { visible: false },
+        activity: { left: 30,  top: 15,  w: 80,  h: 9,  visible: true },
+        title:    { left: 5,   top: 108, w: 305, h: 15, visible: true },
+        time:     { left: 5,   top: 129, w: 35,  h: 9,  visible: true },
+        timespan: { left: 45,  top: 129, w: 65,  h: 9,  visible: true },
+    };
+}
+
+// Buttons that switch channels → trigger a delayed EPG refresh after sending
+const HCV2_CHANNEL_BTNS = new Set([
+    'ch_up', 'ch_down', 'ch_prev',
+    'num_0','num_1','num_2','num_3','num_4',
+    'num_5','num_6','num_7','num_8','num_9',
+    'num_enter',
+]);
+
 // Per-hub config fields: when a hub is active, these override the top-level config.
-const HCV2_HUB_FIELDS = ['name', 'entity', 'config_file', 'color', 'buttons', 'dynamic_slots'];
+const HCV2_HUB_FIELDS = [
+    'name', 'entity', 'config_file', 'color',
+    'activity_media', 'activity_camera',
+    'enigma2_url', 'enigma2_entity', 'enigma2_activities',
+    'buttons', 'dynamic_slots',
+];
 const HCV2_MAX_HUBS   = 5;
 
 // ============================================================================
@@ -128,6 +216,24 @@ class HarmonyCardV2 extends HTMLElement {
         this._playing    = false;  // play/pause toggle state
         this._sheetMode  = null;   // null | 'devices' | 'commands'
         this._sheetDev   = null;
+        // Display engine state (ported from V1)
+        this._tvData     = null;   // EPG snapshot built from the enigma2 sensor
+        this._logoCache  = {};     // picon URL → 'loading' | 'loaded' | 'failed'
+        this._colorCache = {};     // thumb URL → extracted color set
+        this._lastDispFp = '';     // display data fingerprint (set hass fast path)
+        this._lastEpgAct = null;   // last activity an EPG sensor refresh was fired for
+        this._appliedLayoutMode = null;  // 'tv' | 'media' currently applied to the DOM
+        this._curLayout  = null;   // merged layout of the applied mode
+        this._curThumb   = null;   // current background thumb URL (color-extract guard)
+        this._dispBgConf = null;   // last applied display_bg_color
+        this._tvLastTitle = '';    // mode C: grab cache-bust only on title change
+        this._tvGrabUrl   = null;
+        this._progressTimer    = null;  // 1s ticker for progress fill + remaining time
+        this._grabRefreshTimer = null;  // periodic /grab background reload
+        this._grabRefreshBase  = null;
+        this._grabRefreshInterval = 0;
+        this._epgRefreshTimer  = null;  // delayed EPG refresh after channel switch
+        this._epgRefreshTimer2 = null;
     }
 
     connectedCallback() {
@@ -135,7 +241,10 @@ class HarmonyCardV2 extends HTMLElement {
             this._onResize = () => this._fitRemote();
             window.addEventListener('resize', this._onResize, { passive: true });
         }
-        if (this._rendered) this._fitRemote();
+        if (this._rendered) {
+            this._fitRemote();
+            this._updateDisplay();   // restart display timers after re-attach
+        }
     }
 
     disconnectedCallback() {
@@ -144,6 +253,11 @@ class HarmonyCardV2 extends HTMLElement {
             this._onResize = null;
         }
         if (this._numTimer) { clearTimeout(this._numTimer); this._numTimer = null; }
+        // Display engine timers
+        this._stopProgressTimer();
+        this._stopGrabRefresh();
+        if (this._epgRefreshTimer)  { clearTimeout(this._epgRefreshTimer);  this._epgRefreshTimer  = null; }
+        if (this._epgRefreshTimer2) { clearTimeout(this._epgRefreshTimer2); this._epgRefreshTimer2 = null; }
     }
 
     // Auto-fit the flat remote into the visible area (Pixel 8 Pro etc.):
@@ -243,6 +357,13 @@ class HarmonyCardV2 extends HTMLElement {
         this._conf    = { Devices: {}, Activities: {} };
         this._lastAct = null;
         this._playing = false;
+        this._tvData      = null;   // display engine: per-hub EPG state
+        this._lastEpgAct  = null;
+        this._lastDispFp  = '';
+        this._tvLastTitle = '';
+        this._tvGrabUrl   = null;
+        this._stopGrabRefresh();
+        this._stopProgressTimer();
         this._rendered = false;   // force full rebuild — pills/slots/accent are per-hub
         this._loadConf();
     }
@@ -298,7 +419,44 @@ class HarmonyCardV2 extends HTMLElement {
             this._lastAct = act;
             this._playing = false; // reset play/pause on activity change
             if (this._rendered) this._updateLive();
+            return;
         }
+        // Same activity: refresh only the display when its data fingerprint
+        // (EPG sensor, media entity, hub online states) changed. No full re-render —
+        // _updateDisplay() is idempotent and only patches text/style.
+        if (!this._rendered) return;
+        const fp = this._displayFingerprint();
+        if (fp !== this._lastDispFp) {
+            this._lastDispFp = fp;
+            this._renderHubBar();
+            this._updateDisplay();
+        }
+    }
+
+    // Cheap change detector for the display zone: EPG sensor, media entity
+    // and hub online states. Compared on every hass update.
+    _displayFingerprint() {
+        if (!this._hass || !this.config) return '';
+        const parts = [];
+        const eid = this.config.enigma2_entity;
+        if (eid) {
+            const ss = this._hass.states[eid];
+            const sa = ss ? (ss.attributes || {}) : {};
+            parts.push(ss ? ss.state : '',
+                sa.currservice_name || '', sa.currservice_begin || '',
+                sa.currservice_station || '');
+        }
+        const act  = this._lastAct;
+        const mEid = (act && this.config.activity_media && this.config.activity_media[act]) || null;
+        if (mEid) {
+            const ms = this._hass.states[mEid];
+            const ma = ms ? (ms.attributes || {}) : {};
+            parts.push(ms ? ms.state : '',
+                ma.media_title || '', String(ma.media_position || ''),
+                ma.entity_picture_local || ma.entity_picture || '');
+        }
+        this._getHubs().forEach(h => parts.push(this._isHubOnline(h) ? '1' : '0'));
+        return parts.join('|');
     }
 
     getCardSize() { return 8; }
@@ -448,7 +606,7 @@ class HarmonyCardV2 extends HTMLElement {
 <div class="card">
 <div class="flt-remote" id="hcv2-card" style="--hcv2-accent:${_e(accent)}">
 
-  <!-- Zone 1: display (data engine follows later — DOM skeleton only) -->
+  <!-- Zone 1: display (EPG/media data engine, design canvas 370×147 scaled) -->
   <div class="hcv2-disp" id="hcv2-disp"${this.config.show_display === false ? ' style="display:none"' : ''}>
     <div id="hcv2-disp-canvas">
       <div id="hcv2-disp-bg"></div>
@@ -546,6 +704,10 @@ class HarmonyCardV2 extends HTMLElement {
 </div><!-- /card -->
 ${this._sheetHtml()}
 `;
+        // Display DOM was rebuilt → force a fresh layout apply + background
+        this._appliedLayoutMode = null;
+        this._curLayout         = null;
+        this._dispBgConf        = null;
         this._bindEvents();
         this._updateLive();
     }
@@ -597,14 +759,35 @@ ${this._sheetHtml()}
         }
     }
 
-    // ── Display zone (flat skin) ──────────────────────────────────────────────
+    // ── Display zone (flat skin) — data engine ported from V1 ────────────────
 
-    // Display height follows the V1 proportion: height = width × 147/370
+    // Effective design-canvas size from config offsets (defaults → 370×147)
+    get _dispW() {
+        const o = this.config && Number(this.config.display_offset_w);
+        return HCV2_BASE_W + (Number.isFinite(o) ? o : HCV2_DEFAULT_OFFSET_W);
+    }
+    get _dispH() {
+        const o = this.config && Number(this.config.display_offset_h);
+        return HCV2_BASE_H + (Number.isFinite(o) ? o : HCV2_DEFAULT_OFFSET_H);
+    }
+
+    // Scale the fixed-size design canvas to the actual container width.
+    // Canvas keeps its design dimensions; transform: scale() does the fitting.
     _sizeDisplay() {
-        const el = this.shadowRoot && this.shadowRoot.getElementById('hcv2-disp');
-        if (!el) return;
-        const w = el.offsetWidth;
-        if (w) el.style.height = Math.round(w * 147 / 370) + 'px';
+        const root = this.shadowRoot;
+        if (!root) return;
+        const disp   = root.getElementById('hcv2-disp');
+        const canvas = root.getElementById('hcv2-disp-canvas');
+        if (!disp || !canvas) return;
+        const w = disp.offsetWidth;
+        if (!w) return;
+        const dispW = this._dispW, dispH = this._dispH;
+        const scale = w / dispW;
+        canvas.style.width           = dispW + 'px';
+        canvas.style.height          = dispH + 'px';
+        canvas.style.transform       = 'scale(' + scale.toFixed(4) + ')';
+        canvas.style.transformOrigin = 'top left';
+        disp.style.height            = Math.round(dispH * scale) + 'px';
     }
 
     // Entity behind the display "more" dots: per-activity camera, else media player
@@ -616,19 +799,728 @@ ${this._sheetHtml()}
         return cam || med || null;
     }
 
-    // Stub: the full data engine (channel/title/time/logo/progress) follows in a
-    // later step. For now: activity caption + dots visibility + sizing only.
-    _updateDisplay() {
+    // True when the activity is listed in config.enigma2_activities
+    _isTVActivity(act) {
+        const acts = this.config && this.config.enigma2_activities;
+        return !!(acts && Array.isArray(acts) && acts.includes(act));
+    }
+
+    // Parses channel + programme title for TV activities from HA enigma2 attrs.
+    // Prefers currservice_station/currservice_name; falls back to media_channel
+    // or the "Channel - Programme" split of media_title.
+    _parseTVTitle(haAttrs) {
+        if (!haAttrs) return { channel: '', title: '' };
+        const csStn  = (haAttrs.currservice_station || '').trim();
+        const csName = (haAttrs.currservice_name    || '').trim();
+        if (csStn && csName) return { channel: csStn, title: csName };
+        if (csStn)           return { channel: csStn, title: '' };
+        const ch = (haAttrs.media_channel || '').trim();
+        const t  = (haAttrs.media_title   || '').trim();
+        if (ch) return { channel: ch, title: t };
+        const sep = t.indexOf(' - ');
+        if (sep > 0) {
+            return { channel: t.substring(0, sep).trim(), title: t.substring(sep + 3).trim() };
+        }
+        return { channel: '', title: t };
+    }
+
+    // Composite media title for non-TV players (Kodi/Plex etc.)
+    _getMediaTitle(attrs) {
+        if (!attrs) return '';
+        const ch     = attrs.media_channel       || '';
+        const title  = attrs.media_title         || '';
+        const series = attrs.media_series_title  || '';
+        const artist = attrs.media_artist        || '';
+        if (ch && title)     return ch     + '  ·  ' + title;
+        if (series && title) return series + '  ·  ' + title;
+        if (artist && title) return artist + '  –  ' + title;
+        return title;
+    }
+
+    // Progress [0..1] from EPG begin/end "HH:MM" strings (midnight-safe)
+    _tvProgress() {
+        if (!this._tvData || !this._tvData.beginStr || !this._tvData.endStr) return null;
+        const parseHHMM = (s) => {
+            const p = s.split(':');
+            if (p.length < 2) return NaN;
+            const h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+            return isNaN(h) || isNaN(m) ? NaN : h * 3600 + m * 60;
+        };
+        const now  = new Date();
+        let   nowS = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+        const begin = parseHHMM(this._tvData.beginStr);
+        let   end   = parseHHMM(this._tvData.endStr);
+        if (isNaN(begin) || isNaN(end)) return null;
+        if (end < begin) end += 86400;                  // programme crosses midnight
+        if (nowS < begin && end > 86400) nowS += 86400; // viewer is already past midnight
+        const total   = end - begin;
+        const elapsed = nowS - begin;
+        if (total <= 0 || elapsed < 0) return null;
+        return Math.min(1, elapsed / total);
+    }
+
+    // Progress [0..1] from entity attributes.
+    // Priority: enigma2 unix timestamps, then media_duration/media_position
+    // extrapolated from media_position_updated_at. null when no time data.
+    _mediaPctFromAttrs(attrs) {
+        if (!attrs) return null;
+        const bts = attrs.currservice_begin_timestamp;
+        const ets = attrs.currservice_end_timestamp;
+        if (bts && ets) {
+            const total   = (ets - bts) * 1000;
+            const elapsed = Date.now() - bts * 1000;
+            if (total > 0) return Math.max(0, Math.min(1, elapsed / total));
+        }
+        if (attrs.media_duration) {
+            const dur     = attrs.media_duration;
+            const posBase = attrs.media_position || 0;
+            const updTs   = attrs.media_position_updated_at
+                ? new Date(attrs.media_position_updated_at).getTime()
+                : Date.now();
+            const elapsed = Math.max(0, (Date.now() - updTs) / 1000);
+            const pos     = Math.min(dur, posBase + elapsed);
+            return Math.max(0, Math.min(1, pos / dur));
+        }
+        return null;
+    }
+
+    // Remaining seconds from EPG/entity data, null when unknown
+    _computeRemainingSeconds(tvData, haAttrs) {
+        // 1) EPG endStr "HH:MM" relative to now
+        if (tvData && tvData.endStr) {
+            const parts = tvData.endStr.split(':');
+            if (parts.length >= 2) {
+                const eh = parseInt(parts[0], 10), em = parseInt(parts[1], 10);
+                if (!isNaN(eh) && !isNaN(em)) {
+                    const now   = new Date();
+                    const endDt = new Date(now);
+                    endDt.setHours(eh, em, 0, 0);
+                    if (endDt.getTime() <= now.getTime() - 60000) endDt.setDate(endDt.getDate() + 1);
+                    return Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
+                }
+            }
+        }
+        // 2) Enigma2 unix timestamps
+        if (haAttrs && haAttrs.currservice_end_timestamp) {
+            return Math.max(0, (haAttrs.currservice_end_timestamp * 1000 - Date.now()) / 1000);
+        }
+        // 3) Enigma2 HH:MM string fallback
+        if (haAttrs && haAttrs.currservice_end && !haAttrs.currservice_end_timestamp) {
+            const parts = (haAttrs.currservice_end || '').split(':');
+            if (parts.length >= 2) {
+                const eh = parseInt(parts[0], 10), em = parseInt(parts[1], 10);
+                if (!isNaN(eh) && !isNaN(em)) {
+                    const now   = new Date();
+                    const endDt = new Date(now);
+                    endDt.setHours(eh, em, 0, 0);
+                    if (endDt.getTime() <= now.getTime() - 60000) endDt.setDate(endDt.getDate() + 1);
+                    return Math.max(0, (endDt.getTime() - now.getTime()) / 1000);
+                }
+            }
+        }
+        // 4) Standard HA media player
+        if (haAttrs && haAttrs.media_duration) {
+            const dur     = haAttrs.media_duration;
+            const posBase = haAttrs.media_position || 0;
+            const updTs   = haAttrs.media_position_updated_at
+                ? new Date(haAttrs.media_position_updated_at).getTime()
+                : Date.now();
+            const elapsed = Math.max(0, (Date.now() - updTs) / 1000);
+            const pos     = Math.min(dur, posBase + elapsed);
+            return Math.max(0, dur - pos);
+        }
+        return null;
+    }
+
+    // Remaining time as "+Xm" (minutes), '' when unknown
+    _computeTimeRemaining(tvData, haAttrs) {
+        const remSec = this._computeRemainingSeconds(tvData, haAttrs);
+        if (remSec === null || remSec <= 0) return '';
+        const m = Math.max(0, Math.floor(remSec / 60));
+        return '+' + m + 'm';
+    }
+
+    // Programme span as "HH:MM - HH:MM", '' when unknown
+    _computeTimeSpan(tvData, haAttrs) {
+        const fmtClock = (h, m) =>
+            (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+        const fromTs = (ts) => {
+            const d = new Date(ts);
+            return fmtClock(d.getHours(), d.getMinutes());
+        };
+        if (tvData && tvData.beginStr && tvData.endStr) {
+            return tvData.beginStr + ' - ' + tvData.endStr;
+        }
+        if (haAttrs && haAttrs.currservice_begin_timestamp && haAttrs.currservice_end_timestamp) {
+            return fromTs(haAttrs.currservice_begin_timestamp * 1000) + ' - ' +
+                   fromTs(haAttrs.currservice_end_timestamp * 1000);
+        }
+        if (haAttrs && haAttrs.currservice_begin && haAttrs.currservice_end) {
+            return haAttrs.currservice_begin + ' - ' + haAttrs.currservice_end;
+        }
+        if (haAttrs && haAttrs.media_duration) {
+            const dur     = haAttrs.media_duration;
+            const posBase = haAttrs.media_position || 0;
+            const updTs   = haAttrs.media_position_updated_at
+                ? new Date(haAttrs.media_position_updated_at).getTime()
+                : Date.now();
+            const elapsed = Math.max(0, (Date.now() - updTs) / 1000);
+            const pos     = Math.min(dur, posBase + elapsed);
+            const beginDt = new Date(Date.now() - pos * 1000);
+            const endDt   = new Date(Date.now() + (dur - pos) * 1000);
+            return fmtClock(beginDt.getHours(), beginDt.getMinutes()) + ' - ' +
+                   fmtClock(endDt.getHours(), endDt.getMinutes());
+        }
+        return '';
+    }
+
+    // Preload a channel logo (picon). Result cached in _logoCache; on settle the
+    // display refreshes once so the loaded image (or the TV-icon fallback) shows.
+    _preloadLogo(url) {
+        if (!url || this._logoCache[url]) return;
+        this._logoCache[url] = 'loading';
+        const img = new Image();
+        img.onload = () => {
+            this._logoCache[url] = 'loaded';
+            this._lastDispFp = '';
+            if (this._rendered) this._updateDisplay();
+        };
+        img.onerror = () => {
+            this._logoCache[url] = 'failed';
+            this._lastDispFp = '';
+            if (this._rendered) this._updateDisplay();
+        };
+        img.src = url;
+    }
+
+    // Canvas-based color extraction (Vibrant.js style) from a same-origin thumb.
+    // Cross-origin images make getImageData() throw → resolves null (neutral colors).
+    _extractColors(imageUrl) {
+        if (this._colorCache[imageUrl]) return Promise.resolve(this._colorCache[imageUrl]);
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const W = 80, H = 80;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = W; canvas.height = H;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, W, H);
+                    const data = ctx.getImageData(0, 0, W, H).data;
+                    // 16x16x16 bucket histogram (quantization step 16)
+                    const buckets = {};
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (data[i + 3] < 128) continue;   // skip transparent pixels
+                        const rq = data[i]     >> 4;
+                        const gq = data[i + 1] >> 4;
+                        const bq = data[i + 2] >> 4;
+                        const key = (rq << 8) | (gq << 4) | bq;
+                        if (!buckets[key]) buckets[key] = { rs: 0, gs: 0, bs: 0, n: 0 };
+                        buckets[key].rs += data[i]; buckets[key].gs += data[i+1];
+                        buckets[key].bs += data[i+2]; buckets[key].n++;
+                    }
+                    // Vibrant-like score: prefer saturated mid-lightness colors
+                    const computeScore = (r, g, b, n) => {
+                        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                        const l   = (max + min) / 2 / 255;
+                        const s   = max === min ? 0 : (max - min) / (max + min < 255 ? (max + min) : (510 - max - min));
+                        const lFactor = 1 - Math.min(1, Math.abs(l - 0.5) * 2);
+                        const sFactor = Math.min(1, s * 1.4);
+                        const vib     = Math.max(0.05, sFactor) * Math.max(0.3, lFactor);
+                        return n * (0.4 + 0.6 * vib);
+                    };
+                    const colors = Object.values(buckets)
+                        .filter(b => b.n > 0)
+                        .map(b => {
+                            const r = Math.round(b.rs / b.n);
+                            const g = Math.round(b.gs / b.n);
+                            const bl = Math.round(b.bs / b.n);
+                            return { r, g, b: bl, n: b.n, score: computeScore(r, g, bl, b.n) };
+                        })
+                        .sort((a, b) => b.score - a.score);
+                    if (colors.length === 0) { resolve(null); return; }
+                    const bg    = colors[0];
+                    const bgLum = _hcv2RelativeLum(bg.r, bg.g, bg.b);
+                    const fg = bgLum > 0.45
+                        ? { r: 24,  g: 24,  b: 24  }
+                        : { r: 245, g: 245, b: 245 };
+                    const result = {
+                        bg:      'rgb(' + bg.r + ',' + bg.g + ',' + bg.b + ')',
+                        text:    'rgb(' + fg.r + ',' + fg.g + ',' + fg.b + ')',
+                        subText: 'rgba(' + fg.r + ',' + fg.g + ',' + fg.b + ',0.78)',
+                        lum:     bgLum
+                    };
+                    this._colorCache[imageUrl] = result;
+                    resolve(result);
+                } catch (e) { resolve(null); }
+            };
+            img.onerror = () => resolve(null);
+            img.src = imageUrl;
+        });
+    }
+
+    // Gradient overlay + progress color from extracted thumb colors (or neutral).
+    // Neutral fallback = CSS defaults (display stays smoked-glass, fill = accent).
+    _applyDispColors(colors) {
         const root = this.shadowRoot;
         if (!root) return;
+        const gradEl = root.getElementById('hcv2-disp-grad');
+        const fillEl = root.getElementById('hcv2-disp-progress-fill');
+        if (colors && colors.bg) {
+            const bgTrans = colors.bg.startsWith('rgb(')
+                ? colors.bg.replace('rgb(', 'rgba(').replace(')', ',0)')
+                : colors.bg + '00';
+            if (gradEl) gradEl.style.background =
+                'linear-gradient(to right, ' + colors.bg + ' 35%, ' + bgTrans + ' 75%)';
+            if (fillEl) fillEl.style.background = colors.text || '';
+        } else {
+            if (gradEl) gradEl.style.background = '';
+            if (fillEl) fillEl.style.background = '';
+        }
+    }
+
+    // Seek the activity's media player to pct (only when a duration is known)
+    _seekMedia(pct) {
+        const eid = (this.config && this.config.activity_media &&
+                     this.config.activity_media[this._lastAct]) || null;
+        const ms  = eid && this._hass ? (this._hass.states[eid] || null) : null;
+        if (!ms || !ms.attributes.media_duration) return;
+        this._hass.callService('media_player', 'media_seek', {
+            entity_id: eid, seek_position: pct * ms.attributes.media_duration
+        }).catch(() => {});
+    }
+
+    // ── Progress timer (1s tick: fill width + remaining time) ────────────────
+
+    _startProgressTimer() {
+        if (this._progressTimer) return;   // already ticking
+        this._progressTimer = setInterval(() => this._updateProgressBar(), 1000);
+    }
+
+    _stopProgressTimer() {
+        if (this._progressTimer) { clearInterval(this._progressTimer); this._progressTimer = null; }
+    }
+
+    _updateProgressBar() {
+        if (!this.shadowRoot || !this._rendered || !this.config) return;
+        const fill = this.shadowRoot.getElementById('hcv2-disp-progress-fill');
+        if (!fill) return;
+        let pct = null;
+        if (this._tvData) pct = this._tvProgress();
+        let haAttrs = null;
+        const eid = (this.config.activity_media && this.config.activity_media[this._lastAct]) || null;
+        const ms  = eid && this._hass ? (this._hass.states[eid] || null) : null;
+        if (ms) haAttrs = ms.attributes || {};
+        if (pct === null) pct = this._mediaPctFromAttrs(haAttrs);
+        if (pct !== null) fill.style.width = (pct * 100).toFixed(2) + '%';
+        // Live remaining-time text ("+Xm")
+        const timeEl = this.shadowRoot.getElementById('hcv2-disp-time');
+        if (timeEl && timeEl.style.display !== 'none') {
+            const remStr = this._computeTimeRemaining(this._tvData, haAttrs);
+            if (remStr) timeEl.textContent = remStr;
+        }
+    }
+
+    // ── Grab-image refresh (TV background polling via /grab endpoint) ────────
+
+    _startGrabRefresh(baseUrl) {
+        // Interval from config (seconds → ms, default 30s, minimum 5s)
+        const intervalMs = Math.max(5, (this.config.epg_grab_interval || 30)) * 1000;
+        const cleanUrl   = baseUrl.replace(/([&?])_t=\d+/, '');
+        if (this._grabRefreshBase === cleanUrl && this._grabRefreshTimer &&
+            this._grabRefreshInterval === intervalMs) return;
+        this._stopGrabRefresh();
+        this._grabRefreshBase     = cleanUrl;
+        this._grabRefreshInterval = intervalMs;
+        const sep = cleanUrl.includes('?') ? '&' : '?';
+        this._grabRefreshTimer = setInterval(() => {
+            const bgEl = this.shadowRoot && this.shadowRoot.getElementById('hcv2-disp-bg');
+            if (!bgEl || bgEl.style.display === 'none') return;
+            const newUrl = cleanUrl + sep + '_t=' + Date.now();
+            // Browser keeps showing the old image until the new one is loaded — no flicker
+            bgEl.style.backgroundImage = 'url(' + newUrl + ')';
+            bgEl.dataset.src = newUrl;
+        }, intervalMs);
+    }
+
+    _stopGrabRefresh() {
+        if (this._grabRefreshTimer) {
+            clearInterval(this._grabRefreshTimer);
+            this._grabRefreshTimer = null;
+        }
+        this._grabRefreshBase = null;
+    }
+
+    // Delayed EPG sensor refresh after a channel switch (receiver needs ~1-2s).
+    // Rapid key presses (digits) collapse into a single refresh.
+    _scheduleEpgRefresh() {
+        if (!this._hass || !this.config) return;
+        const eid = this.config.enigma2_entity;
+        if (!eid) return;
+        if (this._epgRefreshTimer) clearTimeout(this._epgRefreshTimer);
+        this._epgRefreshTimer = setTimeout(() => {
+            this._epgRefreshTimer = null;
+            if (this._hass) {
+                this._hass.callService('homeassistant', 'update_entity', { entity_id: eid })
+                    .catch(() => {});
+            }
+            // Second refresh 2s later in case the receiver had not switched yet
+            this._epgRefreshTimer2 = setTimeout(() => {
+                this._epgRefreshTimer2 = null;
+                if (this._hass) {
+                    this._hass.callService('homeassistant', 'update_entity', { entity_id: eid })
+                        .catch(() => {});
+                }
+            }, 2000);
+        }, 1500);
+    }
+
+    // ── Layout system (design-canvas absolute positioning) ───────────────────
+
+    // Merged layout for a mode: config (tv_layout/media_layout) wins element-wise
+    _effLayout(mode) {
+        const cfgKey = mode === 'tv' ? 'tv_layout' : 'media_layout';
+        const stored = (this.config && this.config[cfgKey]) || {};
+        const defs   = hcv2DefaultLayout(mode);
+        const layout = {};
+        new Set([...Object.keys(defs), ...Object.keys(stored)])
+            .forEach(k => { layout[k] = { ...(defs[k] || {}), ...(stored[k] || {}) }; });
+        return layout;
+    }
+
+    // Positions all display elements absolutely on the design canvas.
+    // Heavy DOM writes — called only on mode change or after a full render.
+    _applyDisplayLayout(mode) {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const disp   = root.getElementById('hcv2-disp');
+        const canvas = root.getElementById('hcv2-disp-canvas');
+        if (!disp || !canvas) return;
+        const layout = this._effLayout(mode);
+        this._curLayout         = layout;
+        this._appliedLayoutMode = mode;
+        disp.classList.toggle('hcv2-disp--tv',    mode === 'tv');
+        disp.classList.toggle('hcv2-disp--media', mode === 'media');
+        const dispW = this._dispW;
+        const idMap = {
+            power: 'hcv2-disp-power', menu: 'hcv2-disp-dots', logo: 'hcv2-disp-logo',
+            activity: 'hcv2-disp-activity', channel: 'hcv2-disp-channel',
+            title: 'hcv2-disp-title', time: 'hcv2-disp-time', timespan: 'hcv2-disp-timespan',
+        };
+        // Drop previously created panels and lines
+        canvas.querySelectorAll('.hcv2-panel,.hcv2-line').forEach(el => el.remove());
+        Object.entries(layout).forEach(([key, def]) => {
+            const isPanel = hcv2IsPanel(key);
+            const isLine  = hcv2IsLine(key);
+            let el;
+            if (isPanel || isLine) {
+                if (def.visible === false) return;
+                el = document.createElement('div');
+                el.className = isPanel ? 'hcv2-panel' : 'hcv2-line';
+                el.dataset.elemKey = key;
+                canvas.appendChild(el);
+            } else {
+                el = root.getElementById(idMap[key] || '');
+                if (!el) return;
+                if (def.visible === false) { el.style.display = 'none'; return; }
+                // Clear a stale 'none' from the previous mode — the content pass
+                // in _updateDisplay() re-decides visibility right afterwards.
+                el.style.display = '';
+            }
+            const isIcon = (key === 'logo' || key === 'power' || key === 'menu');
+            const w = def.w || 30;
+            const h = def.h || 14;
+            // Element center decides right-aligned text for time/timespan
+            const cx = (def.left || 0) + w / 2;
+            const inRightArea = cx > dispW * 0.5;
+            el.style.position  = 'absolute';
+            el.style.left      = (def.left || 0) + 'px';
+            el.style.top       = (def.top  || 0) + 'px';
+            el.style.right     = 'auto';
+            el.style.bottom    = 'auto';
+            el.style.transform = isLine ? 'rotate(' + (def.rotation || 0) + 'deg)' : 'none';
+            el.style.margin    = '0';
+            el.style.zIndex    = (isPanel || isLine) ? '2' : '3';
+            el.style.width     = w + 'px';
+            el.style.overflow  = 'hidden';
+            if (isLine) {
+                el.style.height          = h + 'px';
+                el.style.background      = def.color || '#888888';
+                el.style.borderRadius    = '0';
+                el.style.transformOrigin = 'center center';
+                el.style.pointerEvents   = 'none';
+                return;
+            }
+            if (isPanel) {
+                el.style.height        = h + 'px';
+                el.style.background    = hcv2PanelBg(def);
+                el.style.borderRadius  = ((def.radius != null) ? def.radius : 8) + 'px';
+                el.style.pointerEvents = 'none';
+            } else if (isIcon) {
+                el.style.height     = h + 'px';
+                el.style.lineHeight = '';
+            } else {
+                el.style.height     = 'auto';
+                el.style.lineHeight = '1.2';
+            }
+            if (key === 'activity') { el.style.display = 'flex'; el.style.alignItems = 'center'; }
+            if (key === 'time' || key === 'timespan') {
+                el.style.textAlign    = inRightArea ? 'right' : 'left';
+                el.style.paddingRight = inRightArea ? '5px'   : '0';
+                el.style.paddingLeft  = inRightArea ? '0'     : '5px';
+            }
+            // Text element overrides: font size, font family, color
+            if (hcv2IsTextEl(key)) {
+                if (def.fontSize)   el.style.fontSize   = def.fontSize + 'px';
+                if (def.fontFamily) el.style.fontFamily = def.fontFamily;
+                else                el.style.fontFamily = '';
+                if (def.color && def.color !== 'auto') el.style.color = def.color;
+                else                                   el.style.color = '';
+            }
+        });
+        this._sizeDisplay();
+    }
+
+    // ── Display refresh (idempotent, light: textContent/style patches only) ──
+
+    _updateDisplay() {
+        const root = this.shadowRoot;
+        if (!root || !this.config) return;
         const disp = root.getElementById('hcv2-disp');
-        if (!disp) return;
-        const current = this._lastAct || 'PowerOff';
-        const isOn    = current && current !== 'PowerOff';
-        const actEl = root.getElementById('hcv2-disp-activity');
-        if (actEl) actEl.textContent = isOn ? current : 'Kein Gerät aktiv';
-        const dots = root.getElementById('hcv2-disp-dots');
-        if (dots) dots.style.display = this._dispMoreEntity() ? 'flex' : 'none';
+        if (!disp) return;                   // flat skin only
+        const act     = this._lastAct || 'PowerOff';
+        const isOn    = !!act && act !== 'PowerOff';
+        const isTVAct = this._isTVActivity(act);
+
+        // -- EPG data (mode A): enigma2 sensor attributes → this._tvData --
+        const enigma2Base = (this.config.enigma2_url || '').replace(/\/+$/, '');
+        const enigma2Eid  = this.config.enigma2_entity || null;
+        if (isTVAct && enigma2Eid && this._hass) {
+            // Activity just switched to TV → request an immediate sensor poll
+            if (this._lastEpgAct !== act) {
+                this._hass.callService('homeassistant', 'update_entity', { entity_id: enigma2Eid })
+                    .catch(() => {});
+            }
+            const ss = this._hass.states[enigma2Eid];
+            if (ss) {
+                const sa            = ss.attributes || {};
+                const newBegin      = sa.currservice_begin || '';
+                const newStation    = sa.currservice_station || '';
+                const newServiceref = sa.currservice_serviceref || '';
+                const prevBegin     = this._tvData ? this._tvData.beginStr   : null;
+                const prevStation   = this._tvData ? this._tvData.station    : null;
+                const prevSvcRef    = this._tvData ? this._tvData.serviceref : null;
+                // Channel OR programme changed → bust the grab-image cache
+                const progChange = (prevBegin !== newBegin)
+                    || (prevStation !== null && prevStation !== newStation)
+                    || (prevSvcRef  !== null && prevSvcRef  !== newServiceref);
+                const oldThumb   = this._tvData ? this._tvData.thumbUrl : null;
+                // grab_url from the sensor (full URL incl. host); fallback to
+                // enigma2_url (config or sensor attribute) + /grab
+                const sensorBase = (sa.enigma2_url || '').replace(/\/+$/, '');
+                const effBase    = enigma2Base || sensorBase;
+                const grabBase   = sa.grab_url
+                    || (effBase ? effBase + '/grab?format=jpg&r=480&mode=video' : null);
+                this._tvData = {
+                    channel:    newStation || ss.state || '',
+                    title:      sa.currservice_name || '',
+                    beginStr:   newBegin,
+                    endStr:     sa.currservice_end || '',
+                    piconUrl:   sa.picon_url || null,
+                    station:    newStation,
+                    serviceref: newServiceref,
+                    thumbUrl:   grabBase
+                        ? (progChange ? grabBase + '&_t=' + Date.now() : oldThumb)
+                        : null,
+                };
+            } else { this._tvData = null; }
+        } else if (!isTVAct) {
+            this._tvData = null;
+        }
+        this._lastEpgAct = act;
+
+        // -- Media entity (activity_media) --
+        const mediaEid = (this.config.activity_media && this.config.activity_media[act]) || null;
+        const ms       = mediaEid && this._hass ? (this._hass.states[mediaEid] || null) : null;
+        const haAttrs  = ms ? (ms.attributes || {}) : null;
+        const tvData   = isTVAct ? this._tvData : null;
+
+        // Playing state: a selected TV activity counts as playing by definition
+        const isPlaying = tvData
+            ? !!(tvData.channel || tvData.title)
+            : isTVAct
+                ? true
+                : !!(ms && ['playing', 'paused', 'on'].includes(ms.state));
+
+        // Channel + title
+        let channel, title, rawTitle;
+        if (tvData) {
+            channel = tvData.channel; title = tvData.title; rawTitle = title;
+        } else if (isTVAct && haAttrs) {
+            const parsed = this._parseTVTitle(haAttrs);
+            channel  = parsed.channel; title = parsed.title;
+            rawTitle = haAttrs.currservice_name || haAttrs.media_title || '';
+        } else {
+            channel  = '';
+            title    = haAttrs ? this._getMediaTitle(haAttrs) : '';
+            rawTitle = haAttrs ? (haAttrs.media_title || '') : '';
+        }
+
+        // Background thumb: sensor grab URL → direct grab (mode C) → HA proxy picture
+        let thumb;
+        if (tvData) {
+            thumb = tvData.thumbUrl;
+        } else if (isTVAct && enigma2Base) {
+            // Mode C: no sensor data — use /grab directly, cache-bust on title change
+            if (rawTitle !== this._tvLastTitle || !this._tvGrabUrl) {
+                this._tvLastTitle = rawTitle;
+                this._tvGrabUrl   = enigma2Base + '/grab?format=jpg&r=480&mode=video&_t=' + Date.now();
+            }
+            thumb = this._tvGrabUrl;
+        } else {
+            thumb = haAttrs ? (haAttrs.entity_picture_local || haAttrs.entity_picture || null) : null;
+        }
+
+        // -- Layout: apply only when the mode changed (fast path stays cheap) --
+        const layoutMode = (isTVAct && isOn) ? 'tv'
+                         : isOn              ? 'media'
+                         : this._appliedLayoutMode || 'media';
+        if (layoutMode !== this._appliedLayoutMode) this._applyDisplayLayout(layoutMode);
+        const layout = this._curLayout || this._effLayout(layoutMode);
+        const vis = k => !layout[k] || layout[k].visible !== false;
+
+        // -- Element refs --
+        const actEl   = root.getElementById('hcv2-disp-activity');
+        const chanEl  = root.getElementById('hcv2-disp-channel');
+        const titleEl = root.getElementById('hcv2-disp-title');
+        const timeEl  = root.getElementById('hcv2-disp-time');
+        const spanEl  = root.getElementById('hcv2-disp-timespan');
+        const logoEl  = root.getElementById('hcv2-disp-logo');
+        const bgEl    = root.getElementById('hcv2-disp-bg');
+        const dotsEl  = root.getElementById('hcv2-disp-dots');
+        const progEl  = root.getElementById('hcv2-disp-progress');
+        const fillEl  = root.getElementById('hcv2-disp-progress-fill');
+
+        // Smoked-glass base background (configurable, applied once per value)
+        const bgConf = this.config.display_bg_color || HCV2_DEFAULT_DISPLAY_BG;
+        if (this._dispBgConf !== bgConf) {
+            this._dispBgConf = bgConf;
+            disp.style.background = hcv2DisplayBgGradient(bgConf);
+        }
+
+        // -- Texts + visibility --
+        if (actEl) actEl.textContent = isOn ? act : 'Kein Gerät aktiv';
+        const showChannel = isPlaying && !!channel && vis('channel');
+        if (chanEl) {
+            chanEl.textContent   = showChannel ? channel : '';
+            chanEl.style.display = showChannel ? '' : 'none';
+        }
+        const showTitle = isPlaying && !!title && vis('title');
+        if (titleEl) {
+            titleEl.textContent   = showTitle ? title : '';
+            titleEl.style.display = showTitle ? '' : 'none';
+            // Adaptive font size only when the layout does not pin one
+            if (showTitle && !(layout.title && layout.title.fontSize)) {
+                const tLen = title.length;
+                titleEl.style.fontSize = tLen > 45 ? '10px'
+                                       : tLen > 35 ? '11px'
+                                       : tLen > 25 ? '12px'
+                                       : tLen > 15 ? '13px' : '14px';
+            }
+        }
+        const remStr = isPlaying ? this._computeTimeRemaining(tvData, haAttrs) : '';
+        if (timeEl) {
+            timeEl.textContent   = remStr;
+            timeEl.style.display = (remStr && vis('time')) ? '' : 'none';
+        }
+        const spanStr = isPlaying ? this._computeTimeSpan(tvData, haAttrs) : '';
+        if (spanEl) {
+            spanEl.textContent   = spanStr;
+            spanEl.style.display = (spanStr && vis('timespan')) ? '' : 'none';
+        }
+
+        // Dots (more-info) only when a camera/media entity exists and device is on
+        if (dotsEl) dotsEl.style.display = (isOn && this._dispMoreEntity() && vis('menu')) ? 'flex' : 'none';
+
+        // -- Picon / logo --
+        if (logoEl) {
+            if (isTVAct && isPlaying && vis('logo')) {
+                const station = tvData ? tvData.station
+                    : (haAttrs ? (haAttrs.currservice_station || '') : '');
+                const logoUrl = (tvData && tvData.piconUrl)
+                    || (enigma2Base && station
+                        ? enigma2Base + '/picon/' + encodeURIComponent(station) + '.png'
+                        : null);
+                let bgImg;
+                if (logoUrl) {
+                    const status = this._logoCache[logoUrl];
+                    if (!status) this._preloadLogo(logoUrl);
+                    bgImg = (status === 'loaded') ? 'url(' + logoUrl + ')' : HCV2_TV_ICON;
+                } else {
+                    bgImg = HCV2_TV_ICON;
+                }
+                logoEl.style.backgroundImage = bgImg;
+                logoEl.style.display = 'block';
+            } else {
+                logoEl.style.backgroundImage = '';
+                logoEl.style.display = 'none';
+            }
+        }
+
+        // -- Background image, grab polling, gradient colors --
+        if (isPlaying && thumb) {
+            if (bgEl) {
+                const isNewImage = (bgEl.dataset.src !== thumb);
+                if (isNewImage) {
+                    bgEl.style.backgroundImage = 'url(' + thumb + ')';
+                    bgEl.dataset.src = thumb;
+                    // Restart fade-zoom (HA media player style)
+                    bgEl.classList.remove('animate');
+                    void bgEl.offsetWidth;   // force reflow so the animation restarts
+                    bgEl.classList.add('animate');
+                }
+                bgEl.style.display = 'block';
+            }
+            if (isTVAct && thumb.includes('/grab')) this._startGrabRefresh(thumb);
+            else this._stopGrabRefresh();
+            this._curThumb = thumb;
+            if (!isTVAct) {
+                // Kodi thumbs come through the same-origin HA proxy → extraction works.
+                // Guard against stale async results via _curThumb.
+                this._extractColors(thumb).then(colors => {
+                    if (!this.shadowRoot || this._curThumb !== thumb) return;
+                    this._applyDispColors(colors);
+                }).catch(() => this._applyDispColors(null));
+            } else {
+                this._applyDispColors(null);   // grab is cross-origin → neutral
+            }
+        } else {
+            if (bgEl) {
+                bgEl.style.backgroundImage = '';
+                bgEl.style.display = 'none';
+                bgEl.classList.remove('animate');
+                bgEl.dataset.src = '';
+            }
+            this._stopGrabRefresh();
+            this._curThumb = null;
+            this._applyDispColors(null);
+        }
+
+        // -- Progress bar (TV EPG progress preferred, else media entity) --
+        const tvPct = tvData ? this._tvProgress() : null;
+        const haPct = this._mediaPctFromAttrs(haAttrs);
+        const showProgress = isPlaying && ((tvPct !== null) || (haPct !== null));
+        if (progEl) progEl.style.display = showProgress ? 'block' : 'none';
+        if (showProgress) {
+            if (fillEl) {
+                const pct = (tvPct !== null) ? tvPct : haPct;
+                fillEl.style.width = (pct * 100).toFixed(2) + '%';
+            }
+            this._startProgressTimer();
+        } else {
+            this._stopProgressTimer();
+        }
+
         this._sizeDisplay();
     }
 
@@ -665,6 +1557,34 @@ ${this._sheetHtml()}
                 detail: { entityId: ent }, bubbles: true, composed: true,
             }));
         });
+
+        // Display: progress click = seek (only when the media entity has a duration)
+        root.getElementById('hcv2-disp-progress')?.addEventListener('click', e => {
+            e.stopPropagation();
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (!rect.width) return;
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            this._seekMedia(pct);
+        });
+
+        // Display: horizontal swipe (>50px within 600ms) cycles through hubs
+        const dispEl = root.getElementById('hcv2-disp');
+        if (dispEl) {
+            let sx = null, sy = null, t0 = 0;
+            dispEl.addEventListener('pointerdown', e => {
+                if (this._getHubs().length < 2) return;
+                sx = e.clientX; sy = e.clientY; t0 = Date.now();
+            }, { passive: true });
+            dispEl.addEventListener('pointerup', e => {
+                if (sx === null) return;
+                const dx = e.clientX - sx, dy = e.clientY - sy, dt = Date.now() - t0;
+                sx = null; sy = null;
+                if (dt > 600) return;
+                if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+                this._cycleHub(dx > 0 ? -1 : 1);
+            }, { passive: true });
+            dispEl.addEventListener('pointercancel', () => { sx = null; sy = null; }, { passive: true });
+        }
 
         // Extra slots (bot_N) — fire the configured action directly
         root.getElementById('hcv2-slots')?.addEventListener('click', e => {
@@ -959,7 +1879,13 @@ ${this._sheetHtml()}
         let val      = actMap[btnId] || gb[btnId];
         // 'info' unmapped → fall back to the legacy DVR info slot 'dvr_3'
         if (!val && btnId === 'info') val = actMap['dvr_3'] || gb['dvr_3'];
-        if (val) this._fire(val);
+        if (val) {
+            this._fire(val);
+            // Channel-switching buttons on a TV activity → delayed EPG refresh
+            if (this._isTVActivity(act) && HCV2_CHANNEL_BTNS.has(btnId)) {
+                this._scheduleEpgRefresh();
+            }
+        }
     }
 
     _fire(val) {
@@ -1244,21 +2170,26 @@ button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-we
   box-shadow:0 0 0 1px rgba(255,255,255,.04),0 10px 36px rgba(0,0,0,.5);
 }
 
-/* Zone 1 — display (height = width × 147/370, set by _sizeDisplay()) */
-.hcv2-disp{position:relative;width:100%;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#30344a 0%,#1d2030 100%);}
-#hcv2-disp-canvas{position:absolute;inset:0;}
-#hcv2-disp-bg{position:absolute;inset:0;background-size:cover;background-position:center;display:none;}
-#hcv2-disp-grad{position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,18,24,0) 35%,rgba(16,18,24,.55) 100%);}
-#hcv2-disp-power{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.10);display:flex;align-items:center;justify-content:center;color:#dfe5f0;cursor:pointer;transition:background .12s;}
+/* Zone 1 — display: fixed design canvas (370×147 default), scaled via transform.
+   _sizeDisplay() sets canvas width/height/scale and the container height. */
+.hcv2-disp{position:relative;width:100%;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#30344a 0%,#1d2030 100%);touch-action:pan-y;}
+#hcv2-disp-canvas{position:absolute;left:0;top:0;transform-origin:top left;}
+#hcv2-disp-bg{position:absolute;inset:0;z-index:0;background-size:cover;background-position:center;background-repeat:no-repeat;display:none;will-change:transform,opacity;}
+#hcv2-disp-bg.animate{animation:hcv2BgFadeZoom 1.2s ease-out;}
+@keyframes hcv2BgFadeZoom{from{opacity:0;transform:scale(1.10);}to{opacity:1;transform:scale(1.00);}}
+#hcv2-disp-grad{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(16,18,24,0) 35%,rgba(16,18,24,.55) 100%);}
+#hcv2-disp-power{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:38px;height:38px;z-index:3;border-radius:50%;background:rgba(255,255,255,.10);display:flex;align-items:center;justify-content:center;color:#dfe5f0;cursor:pointer;transition:background .12s;}
 #hcv2-disp-power:active{background:rgba(255,255,255,.20);}
-#hcv2-disp-dots{position:absolute;right:4px;top:4px;width:32px;height:32px;border-radius:50%;display:none;align-items:center;justify-content:center;color:#dfe5f0;font-size:18px;font-weight:700;cursor:pointer;}
-#hcv2-disp-activity{position:absolute;top:10px;left:14px;right:44px;font-size:12px;font-weight:600;color:#8a93a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#hcv2-disp-channel{position:absolute;top:28px;left:14px;font-size:20px;font-weight:800;color:#dfe5f0;}
-#hcv2-disp-title{position:absolute;left:62px;right:14px;bottom:26px;font-size:13px;font-weight:700;color:#dfe5f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#hcv2-disp-time{position:absolute;left:62px;bottom:10px;font-size:11px;color:#8a93a8;}
-#hcv2-disp-timespan{position:absolute;right:14px;bottom:10px;font-size:11px;color:#8a93a8;}
-#hcv2-disp-logo{position:absolute;right:12px;top:30px;display:flex;align-items:center;}
-#hcv2-disp-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.12);}
+#hcv2-disp-dots{position:absolute;right:4px;top:4px;width:32px;height:32px;z-index:3;border-radius:50%;display:none;align-items:center;justify-content:center;color:#dfe5f0;font-size:18px;font-weight:700;cursor:pointer;}
+#hcv2-disp-activity{position:absolute;top:10px;left:14px;right:44px;z-index:3;font-size:12px;font-weight:600;color:#8a93a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hcv2-disp-channel{position:absolute;top:28px;left:14px;z-index:3;font-size:16px;font-weight:800;color:#dfe5f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hcv2-disp-title{position:absolute;left:62px;right:14px;bottom:26px;z-index:3;font-size:13px;font-weight:700;color:#dfe5f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#hcv2-disp-time{position:absolute;left:62px;bottom:10px;z-index:3;font-size:11px;color:#e8cc66;white-space:nowrap;}
+#hcv2-disp-timespan{position:absolute;right:14px;bottom:10px;z-index:3;font-size:11px;color:#8a93a8;white-space:nowrap;}
+#hcv2-disp-logo{position:absolute;z-index:3;display:none;background-size:contain;background-position:center;background-repeat:no-repeat;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));}
+.hcv2-panel{position:absolute;z-index:2;pointer-events:none;border-radius:8px;background:rgba(40,40,40,.5);}
+.hcv2-line{position:absolute;z-index:2;pointer-events:none;background:#888888;transform-origin:center center;}
+#hcv2-disp-progress{position:absolute;left:0;right:0;bottom:0;height:4px;z-index:4;cursor:pointer;background:rgba(255,255,255,.12);}
 #hcv2-disp-progress-fill{height:100%;width:0%;background:var(--hcv2-accent);}
 
 /* Zone 2 — hub chip + activity pills */
