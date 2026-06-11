@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.5.0';
+const HCV2_VERSION = '2.5.1';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -315,6 +315,9 @@ class HarmonyCardV2 extends HTMLElement {
         } catch (e) {
             this._conf = { Devices: {}, Activities: {}, _err: String(e) };
         }
+        // Sync current activity from the (possibly just-switched) hub entity
+        const st = this._hass && this._hass.states[this.config && this.config.entity];
+        this._lastAct = (st && st.attributes && st.attributes.current_activity) || null;
         this._render();
         this._rendered = true;
     }
