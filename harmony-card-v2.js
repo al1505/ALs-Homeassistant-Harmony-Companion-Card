@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.8.0';
+const HCV2_VERSION = '2.8.1';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -2222,7 +2222,7 @@ ${this._numpadCss()}</style>`; }
     // ── CSS ───────────────────────────────────────────────────────────────────
 
     _css() { return `<style>
-:host{display:block;}
+:host{display:block;background:#101218;min-height:100%;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 button{background:none;border:none;cursor:pointer;font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;}
 
