@@ -2,7 +2,7 @@
 // ALs HARMONY CARD V2
 // Mobile-first HA custom card for Logitech Harmony Hub
 // Pixel 8 Pro · Device Quick Sheet · No editor · Same config schema as V1
-// Version: 2.8.0
+// Version: 2.8.2
 // ============================================================================
 // SETUP:
 //   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.8.1';
+const HCV2_VERSION = '2.8.2';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -556,9 +556,7 @@ class HarmonyCardV2 extends HTMLElement {
         return Object.entries(raw)
             .filter(([id]) => id !== '-1')
             .map(([id, name]) => {
-                const slotIdx = this._actSlotIndex(name);
-                const slot    = slotIdx >= 0 && this.config.dynamic_slots
-                    ? (this.config.dynamic_slots['act_' + (slotIdx + 1)] || null) : null;
+                const slot = this._actSlotForName(name);
                 return {
                     id,
                     name,
@@ -570,6 +568,26 @@ class HarmonyCardV2 extends HTMLElement {
                 const ai = parseInt(a.id, 10), bi = parseInt(b.id, 10);
                 return (isNaN(ai) || isNaN(bi)) ? String(a.id).localeCompare(String(b.id)) : ai - bi;
             });
+    }
+
+    // Resolve the dynamic_slot (label/icon) that belongs to an activity.
+    // Primary match is by the slot's own action ("activity:::<name>"), so slot
+    // numbering need not follow the conf-sorted order. Falls back to the legacy
+    // index-by-conf-order only for slots that carry no activity action, so a
+    // slot explicitly bound to a different activity is never mis-borrowed
+    // (previously act_N was matched purely by position → swapped labels).
+    _actSlotForName(name) {
+        const ds = (this.config && this.config.dynamic_slots) || {};
+        for (let i = 1; i <= 9; i++) {
+            const s = ds['act_' + i];
+            if (s && s.action === 'activity:::' + name) return s;
+        }
+        const idx = this._actSlotIndex(name);
+        if (idx >= 0) {
+            const s = ds['act_' + (idx + 1)];
+            if (s && !(typeof s.action === 'string' && s.action.indexOf('activity:::') === 0)) return s;
+        }
+        return null;
     }
 
     // Returns 0-based index of activity in sorted order, -1 if not found
