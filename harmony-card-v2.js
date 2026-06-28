@@ -2,7 +2,7 @@
 // ALs HARMONY CARD V2
 // Mobile-first HA custom card for Logitech Harmony Hub
 // Pixel 8 Pro · Device Quick Sheet · No editor · Same config schema as V1
-// Version: 2.8.2
+// Version: 2.8.3
 // ============================================================================
 // SETUP:
 //   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.8.2';
+const HCV2_VERSION = '2.8.3';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -3674,7 +3674,7 @@ ha-checkbox{display:inline-flex;vertical-align:middle;}
 
         const r2 = document.createElement('div');
         r2.appendChild(this._labeled('Aktion',
-            this._searchSelect(this._cmdOptions, currentAction, '-- Aktion wählen --',
+            this._nativeSelect(this._cmdOptions, currentAction, '-- Aktion wählen --',
                 (v) => this._patchSlot(slotId, 'action', v || ''))
         ));
         card.appendChild(r2);
@@ -3807,7 +3807,7 @@ ha-checkbox{display:inline-flex;vertical-align:middle;}
             lbl.className = 'btn-label';
             lbl.textContent = this._btnLabel(btnId);
             row.appendChild(lbl);
-            row.appendChild(this._searchSelect(
+            row.appendChild(this._nativeSelect(
                 this._cmdOptions, ctxButtons[btnId] || '', '-- Befehl --',
                 v => this._patchButton(this._currentContext, btnId, v || '')
             ));
