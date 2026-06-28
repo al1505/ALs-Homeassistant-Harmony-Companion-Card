@@ -2,7 +2,7 @@
 // ALs HARMONY CARD V2
 // Mobile-first HA custom card for Logitech Harmony Hub
 // Pixel 8 Pro · Device Quick Sheet · No editor · Same config schema as V1
-// Version: 2.8.3
+// Version: 2.8.4
 // ============================================================================
 // SETUP:
 //   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.8.3';
+const HCV2_VERSION = '2.8.4';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -192,7 +192,7 @@ const HCV2_HUB_FIELDS = [
     'name', 'entity', 'config_file', 'color',
     'activity_media', 'activity_camera',
     'enigma2_url', 'enigma2_entity', 'enigma2_activities',
-    'buttons', 'dynamic_slots',
+    'buttons', 'dynamic_slots', 'hidden_activities',
 ];
 const HCV2_MAX_HUBS   = 5;
 
@@ -553,8 +553,10 @@ class HarmonyCardV2 extends HTMLElement {
 
     _activities() {
         const raw = this._conf.Activities || {};
+        const hidden = (this.config && this.config.hidden_activities) || [];
         return Object.entries(raw)
             .filter(([id]) => id !== '-1')
+            .filter(([, name]) => hidden.indexOf(name) === -1)
             .map(([id, name]) => {
                 const slot = this._actSlotForName(name);
                 return {
@@ -3604,6 +3606,7 @@ ha-checkbox{display:inline-flex;vertical-align:middle;}
         const { det, body } = this._details('sec-slots-' + prefix, title);
         const banner = this._edHubBanner();
         if (banner) body.appendChild(banner);
+        if (prefix === 'act') { this._buildActivitySlots(body); return det; }
         const slots = this._edCurrentHub().dynamic_slots || {};
 
         let lastFilled = 0;
@@ -3628,6 +3631,113 @@ ha-checkbox{display:inline-flex;vertical-align:middle;}
             body.appendChild(add);
         }
         return det;
+    }
+
+    // Activity slots are activity-driven (not index-driven): one row per
+    // activity, plus a re-add list for activities the user hid via the X.
+    _buildActivitySlots(body) {
+        const hub    = this._edCurrentHub();
+        const slots  = hub.dynamic_slots || {};
+        const hidden = hub.hidden_activities || [];
+        const acts   = this._activitiesList || [];
+        // activity name -> stored slot id (matched by the slot's own action)
+        const slotOf = {};
+        for (let i = 1; i <= 9; i++) {
+            const s = slots['act_' + i];
+            if (s && typeof s.action === 'string' && s.action.indexOf('activity:::') === 0) {
+                slotOf[s.action.slice(11)] = 'act_' + i;
+            }
+        }
+        if (!acts.length) {
+            const e = document.createElement('div'); e.className = 'lbl';
+            e.textContent = 'Keine Aktivitäten — Conf laden?';
+            body.appendChild(e);
+        }
+        acts.filter(a => hidden.indexOf(a.name) === -1)
+            .forEach(a => body.appendChild(this._activityRow(a, slotOf[a.name])));
+
+        if (hidden.length) {
+            const hd = document.createElement('div'); hd.className = 'lbl';
+            hd.style.cssText = 'margin-top:12px;';
+            hd.textContent = 'Ausgeblendete Aktivitäten (zum Wiederanzeigen tippen):';
+            body.appendChild(hd);
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+            hidden.forEach(name => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'add-btn';
+                const ic = document.createElement('ha-icon'); ic.setAttribute('icon', 'mdi:plus'); b.appendChild(ic);
+                b.appendChild(document.createTextNode(' ' + name));
+                b.onclick = () => {
+                    this._edTransformHubField('hidden_activities', (cur) => (cur || []).filter(n => n !== name));
+                    this._buildDOM();
+                };
+                wrap.appendChild(b);
+            });
+            body.appendChild(wrap);
+        }
+    }
+
+    _activityRow(activity, slotId) {
+        const hub  = this._edCurrentHub();
+        const slot = (slotId && hub.dynamic_slots) ? (hub.dynamic_slots[slotId] || {}) : {};
+        const card = document.createElement('div');
+        card.style.cssText = 'border:1px solid var(--divider-color,#ccc);border-radius:6px;padding:8px;display:grid;grid-template-columns:1fr 1fr 36px;gap:8px;align-items:end;';
+        card.appendChild(this._labeled('Icon — ' + activity.name,
+            this._haSelector({ icon: {} }, slot.icon || '', (v) => this._patchActivity(activity.name, 'icon', v || ''))
+        ));
+        const txt = document.createElement('input');
+        txt.type = 'text'; txt.className = 'hc-text-input';
+        txt.value = slot.text || ''; txt.placeholder = activity.name;
+        txt.onchange = (e) => this._patchActivity(activity.name, 'text', e.target.value);
+        card.appendChild(this._labeled('Anzeigename', txt));
+        const del = document.createElement('button');
+        del.type = 'button'; del.className = 'del-btn'; del.title = 'Aktivität ausblenden';
+        const dic = document.createElement('ha-icon'); dic.setAttribute('icon', 'mdi:close'); del.appendChild(dic);
+        del.onclick = () => this._hideActivity(activity.name);
+        card.appendChild(del);
+        return card;
+    }
+
+    // Store label/icon override for an activity in its (action-matched) slot,
+    // allocating a free act_N when none exists yet. Dropping both clears the slot.
+    _patchActivity(actName, field, value) {
+        this._edTransformHubField('dynamic_slots', (cur) => {
+            const next = { ...(cur || {}) };
+            let slotId = null;
+            for (let i = 1; i <= 9; i++) {
+                const s = next['act_' + i];
+                if (s && s.action === 'activity:::' + actName) { slotId = 'act_' + i; break; }
+            }
+            if (!slotId) {
+                for (let i = 1; i <= 9; i++) { if (!next['act_' + i]) { slotId = 'act_' + i; break; } }
+            }
+            if (!slotId) return next;
+            const slot = { ...(next[slotId] || {}) };
+            slot.action = 'activity:::' + actName;
+            if (value === '' || value === null || value === undefined) delete slot[field];
+            else slot[field] = value;
+            if (!slot.text && !slot.icon) delete next[slotId];   // no override -> auto label/icon
+            else next[slotId] = slot;
+            return next;
+        });
+    }
+
+    _hideActivity(actName) {
+        this._edTransformHubField('hidden_activities', (cur) => {
+            const arr = (cur || []).slice();
+            if (arr.indexOf(actName) === -1) arr.push(actName);
+            return arr;
+        });
+        this._edTransformHubField('dynamic_slots', (cur) => {
+            const next = { ...(cur || {}) };
+            for (let i = 1; i <= 9; i++) {
+                const s = next['act_' + i];
+                if (s && s.action === 'activity:::' + actName) delete next['act_' + i];
+            }
+            return next;
+        });
+        this._buildDOM();
     }
 
     _slotRow(prefix, idx) {
