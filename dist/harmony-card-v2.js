@@ -17,7 +17,7 @@
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.8.4';
+const HCV2_VERSION = '2.8.5';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',

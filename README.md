@@ -312,7 +312,7 @@ git clone https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card.git
 cd ALs-Homeassistant-Harmony-Companion-Card
 
 # Datei direkt nach HA kopieren (Symlink für Live-Reload empfohlen)
-cp harmony-companion-card.js /config/www/community/harmony-companion-card/
+cp dist/harmony-companion-card.js /config/www/community/harmony-companion-card/
 
 # Browser Hard-Refresh (Ctrl+Shift+R) — HA cached die JS-Datei
 ```
