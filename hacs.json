@@ -1,5 +1,6 @@
 {
   "name": "ALs Homeassistant Harmony Companion Card",
   "render_readme": true,
+  "filename": "harmony-companion-card.js",
   "homeassistant": "2024.1.0"
 }
