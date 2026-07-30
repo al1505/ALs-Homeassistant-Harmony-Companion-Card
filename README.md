@@ -29,7 +29,7 @@
 **Setup:** `harmony-card-v2.js` wird bei der HACS-Installation automatisch mit heruntergeladen (beide Karten liegen in `dist/`). Nur die Ressource muss einmalig manuell registriert werden:
 ```yaml
 # In HA → Einstellungen → Dashboards → Ressourcen hinzufügen:
-# /local/community/harmony-companion-card/harmony-card-v2.js  (JavaScript Modul)
+# /hacsfiles/ALs-Homeassistant-Harmony-Companion-Card/harmony-card-v2.js  (JavaScript Modul)
 ```
 ```yaml
 # In der Lovelace-View:

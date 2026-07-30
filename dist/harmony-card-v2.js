@@ -5,8 +5,9 @@
 // Version: 2.8.5
 // ============================================================================
 // SETUP:
-//   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
-//   2. Register resource in HA: /local/community/harmony-companion-card/harmony-card-v2.js
+//   1. Installed automatically by HACS together with harmony-companion-card.js
+//      (manual install: copy to /config/www/community/ALs-Homeassistant-Harmony-Companion-Card/)
+//   2. Register resource in HA: /hacsfiles/ALs-Homeassistant-Harmony-Companion-Card/harmony-card-v2.js
 //   3. Use in dashboard:
 //      type: custom:harmony-card-v2
 //      entity: remote.harmony_hub
