@@ -2,7 +2,7 @@
 // ALs HARMONY CARD V2
 // Mobile-first HA custom card for Logitech Harmony Hub
 // Pixel 8 Pro · Device Quick Sheet · No editor · Same config schema as V1
-// Version: 2.8.4
+// Version: 2.8.5
 // ============================================================================
 // SETUP:
 //   1. Copy to /config/www/community/harmony-companion-card/harmony-card-v2.js
@@ -10,14 +10,14 @@
 //   3. Use in dashboard:
 //      type: custom:harmony-card-v2
 //      entity: remote.harmony_hub
-//      config_file: /local/harmony_12563120.conf
+//      config_file: /local/harmony.conf
 //      buttons:
 //        global:
 //          vol_up: "command:::LG Fernseher:::VolumeUp"
 //          ...
 // ============================================================================
 
-const HCV2_VERSION = '2.8.4';
+const HCV2_VERSION = '2.8.5';
 console.info(
     '%c ALs HARMONY CARD V2 %c v' + HCV2_VERSION + ' ',
     'color:#fff;background:#0d9488;font-weight:bold;',
@@ -353,7 +353,7 @@ class HarmonyCardV2 extends HTMLElement {
         return {
             type: 'custom:harmony-card-v2',
             entity: 'remote.harmony_hub',
-            config_file: '/local/harmony_12563120.conf',
+            config_file: '/local/harmony.conf',
             buttons: { global: {} },
             dynamic_slots: {}
         };
@@ -534,7 +534,7 @@ class HarmonyCardV2 extends HTMLElement {
     // ── Config file loading ──────────────────────────────────────────────────
 
     async _loadConf() {
-        const url = (this.config && this.config.config_file) || '/local/harmony_12563120.conf';
+        const url = (this.config && this.config.config_file) || '/local/harmony.conf';
         try {
             const r = await fetch(url, { cache: 'no-store' });
             if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -3196,7 +3196,7 @@ class HarmonyCardV2Editor extends HTMLElement {
     async _fetchConf() {
         // Use the active hub's config_file if available
         const hub = this._edCurrentHub();
-        const url = hub.config_file || this._config.config_file || '/local/harmony_12563120.conf';
+        const url = hub.config_file || this._config.config_file || '/local/harmony.conf';
         this._loadError = null;
         try {
             const res = await fetch(url, { cache: 'no-store' });
@@ -3481,7 +3481,7 @@ ha-checkbox{display:inline-flex;vertical-align:middle;}
         cfgInp.type = 'text'; cfgInp.className = 'hc-text-input';
         cfgInp.style.flex = '1';
         cfgInp.value = hub.config_file || this._config.config_file || '';
-        cfgInp.placeholder = 'z.B. /local/harmony_12563120.conf';
+        cfgInp.placeholder = 'z.B. /local/harmony.conf';
         cfgInp.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
         const reloadBtn = document.createElement('button');
         reloadBtn.textContent = '↺ Neu laden'; reloadBtn.className = 'reload-btn'; reloadBtn.type = 'button';

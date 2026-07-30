@@ -2,8 +2,7 @@
 // ALs HARMONY COMPANION CARD
 // HA-DASHBOARD MASTER-BLUEPRINT v5.0 COMPLIANT CUSTOM CARD
 // LOGITECH HARMONY COMPANION DIGITAL TWIN
-// Version: 5.4.2 (Bugfix: PowerOff-Zustand — kein Layout anwenden, Power-Button ausblenden.
-//                  Verhindert Overlap von Power-Button-Circle mit "PowerOff"-Text.)
+// Version: 5.5.5 (HACS packaging: both cards ship from dist/; neutral default conf path)
 // ----------------------------------------------------------------------------
 // SETUP:
 //   1. Datei nach /config/www/community/harmony-companion-card/harmony-companion-card.js
@@ -11,7 +10,7 @@
 //   3. Resource in HA registrieren
 // ============================================================================
 
-const HC_VERSION = "5.5.4";
+const HC_VERSION = "5.5.5";
 console.info(
     "%c ALs HARMONY COMPANION CARD %c v" + HC_VERSION + " ",
     "color: white; background: #1a1a1a; font-weight: bold;",
@@ -361,7 +360,7 @@ class HarmonyCompanionCard extends HTMLElement {
         return {
             type: 'custom:harmony-companion-card',
             entity: 'remote.harmony_hub',
-            config_file: '/local/harmony_12563120.conf',
+            config_file: '/local/harmony.conf',
             buttons: { global: {} },
             dynamic_slots: {},
             activity_media: {}
@@ -400,7 +399,7 @@ class HarmonyCompanionCard extends HTMLElement {
     async _fetchConfigData() {
         this._renderGen++;
         const localGen = this._renderGen;
-        const url = this.config.config_file || '/local/harmony_12563120.conf';
+        const url = this.config.config_file || '/local/harmony.conf';
         try {
             const response = await fetch(url, { cache: 'no-store' });
             if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -2284,7 +2283,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         this._config = JSON.parse(JSON.stringify(config || {}));
         this._config.type = this._config.type || 'custom:harmony-companion-card';
         if (this._config.entity === undefined) this._config.entity = '';
-        if (!this._config.config_file) this._config.config_file = '/local/harmony_12563120.conf';
+        if (!this._config.config_file) this._config.config_file = '/local/harmony.conf';
         if (!this._config.buttons) this._config.buttons = { global: {} };
         if (!this._config.dynamic_slots) this._config.dynamic_slots = {};
         if (!this._config.activity_media) this._config.activity_media = {};
@@ -2314,7 +2313,7 @@ class HarmonyCompanionEditor extends HTMLElement {
     async _fetchConf() {
         // Nutzt config_file vom aktuell editierten Hub (Multi-Hub) ODER Top-Level (Legacy)
         const hub = this._edCurrentHub();
-        const url = hub.config_file || this._config.config_file || '/local/harmony_12563120.conf';
+        const url = hub.config_file || this._config.config_file || '/local/harmony.conf';
         try {
             const res = await fetch(url, { cache: 'no-store' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -2596,7 +2595,7 @@ class HarmonyCompanionEditor extends HTMLElement {
         cfg.type = 'text';
         cfg.className = 'hc-text-input';
         cfg.value = hub.config_file || this._config.config_file || '';
-        cfg.placeholder = 'z.B. /local/harmony_12563120.conf';
+        cfg.placeholder = 'z.B. /local/harmony.conf';
         cfg.onchange = (e) => this._edPatchHub(idx, 'config_file', e.target.value);
         body.appendChild(this._labeled('Pfad zur Config-Datei', cfg));
 

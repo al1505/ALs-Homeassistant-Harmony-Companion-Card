@@ -26,7 +26,7 @@
 | EPG / Display | Smoked-Glass | — |
 | Haptik | — | navigator.vibrate(30) |
 
-**Setup (manuell):**
+**Setup:** `harmony-card-v2.js` wird bei der HACS-Installation automatisch mit heruntergeladen (beide Karten liegen in `dist/`). Nur die Ressource muss einmalig manuell registriert werden:
 ```yaml
 # In HA → Einstellungen → Dashboards → Ressourcen hinzufügen:
 # /local/community/harmony-companion-card/harmony-card-v2.js  (JavaScript Modul)
@@ -35,7 +35,7 @@
 # In der Lovelace-View:
 type: custom:harmony-card-v2
 entity: remote.harmony_hub
-config_file: /local/harmony_12563120.conf   # selbe Conf wie V1
+config_file: /local/harmony.conf   # selbe Conf wie V1
 buttons:
   global:
     vol_up:    "command:::LG Fernseher:::VolumeUp"
@@ -312,12 +312,12 @@ git clone https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card.git
 cd ALs-Homeassistant-Harmony-Companion-Card
 
 # Datei direkt nach HA kopieren (Symlink für Live-Reload empfohlen)
-cp harmony-companion-card.js /config/www/community/harmony-companion-card/
+cp dist/harmony-companion-card.js /config/www/community/harmony-companion-card/
 
 # Browser Hard-Refresh (Ctrl+Shift+R) — HA cached die JS-Datei
 ```
 
-**Versions-Tag = Release**: jeder Tag wird automatisch als GitHub Release publiziert (inklusive `harmony-companion-card.js` als Asset).
+**Versions-Tag = Release**: jeder Tag wird als GitHub Release publiziert. HACS installiert beide Karten aus dem `dist/`-Verzeichnis des Release-Stands.
 
 ---
 

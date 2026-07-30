@@ -1,4 +1,6 @@
 # version.toml — Single Source of Truth fuer die Projektversion
 # Format: X.Y.Z   ->   X = Release · Y = Features · Z = Bugfixes
+# Tracks the release/tag line (harmony-companion-card.js, HC_VERSION).
+# harmony-card-v2.js keeps its own card version (HCV2_VERSION).
 [project]
-version = "2.8.6"
+version = "5.5.5"
