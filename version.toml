@@ -3,4 +3,4 @@
 # Tracks the release/tag line (harmony-companion-card.js, HC_VERSION).
 # harmony-card-v2.js keeps its own card version (HCV2_VERSION).
 [project]
-version = "5.5.5"
+version = "5.5.6"
