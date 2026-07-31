@@ -7,12 +7,18 @@
 
 [![HACS hinzufuegen](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=al1505&repository=ALs-Homeassistant-Harmony-Companion-Card&category=plugin)
 
+[🇩🇪 Deutsch](#deutsch) | [🇬🇧 English](#english)
+
+---
+
+## Deutsch
+
 > **Lovelace Custom Card für Home Assistant — Digitaler Zwilling der Logitech Harmony Companion Fernbedienung**
 > Mit visuellem Drag-and-Drop-Layout-Editor, Multi-Hub-Support (bis zu 5 Hubs), Smoked-Glass-Display, EPG-Integration und vielem mehr.
 
 ---
 
-## 📱 Harmony Card V2 — Mobile-First (neu)
+### 📱 Harmony Card V2 — Mobile-First (neu)
 
 **`harmony-card-v2.js`** — eigenständige, mobile-first Variante für Pixel / Smartphone, **parallel zu V1** (beide koexistieren, V1 bleibt unverändert).
 
@@ -60,7 +66,7 @@ buttons:
 
 ---
 
-## ☕ Support
+### ☕ Support
 
 Wenn dir diese Card gefällt und du die Weiterentwicklung unterstützen möchtest:
 
@@ -70,7 +76,7 @@ Direkt-Link: **[paypal.me/al1505](https://paypal.me/al1505)** ❤️
 
 ---
 
-## ✨ Features
+### ✨ Features
 
 - 🎮 **Vollständige Aktivitätssteuerung** über Harmony Hub (Activities, Devices, Commands)
 - 📺 **TV-EPG-Integration** mit aktuellem Sender, Sendungstitel, Restzeit und Begin-/End-Anzeige
@@ -88,7 +94,7 @@ Direkt-Link: **[paypal.me/al1505](https://paypal.me/al1505)** ❤️
 
 ---
 
-## 📸 Screenshots
+### 📸 Screenshots
 
 <details open>
 <summary><b>🎬 1. TV-Modus mit Live-EPG (ORF SPORT+ HD)</b></summary>
@@ -164,9 +170,9 @@ Mapping zwischen den **physischen Buttons der Card** (DVR, Guide, Info, Farb-Tas
 
 ---
 
-## 🚀 Installation
+### 🚀 Installation
 
-### Via HACS (empfohlen)
+#### Via HACS (empfohlen)
 
 1. Auf den **HACS-Badge** oben klicken — oder manuell:
    - HACS → **Custom Repositories**
@@ -175,7 +181,7 @@ Mapping zwischen den **physischen Buttons der Card** (DVR, Guide, Info, Farb-Tas
 2. Card installieren → HA neu starten
 3. Lovelace Dashboard → **Karte hinzufügen** → **ALs Homeassistant Harmony Companion Card**
 
-### Manuell
+#### Manuell
 
 1. `harmony-companion-card.js` aus dem [Latest Release](https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card/releases/latest) herunterladen
 2. Datei nach `/config/www/community/harmony-companion-card/harmony-companion-card.js` kopieren
@@ -188,9 +194,9 @@ Mapping zwischen den **physischen Buttons der Card** (DVR, Guide, Info, Farb-Tas
 
 ---
 
-## ⚙️ Konfiguration
+### ⚙️ Konfiguration
 
-### Minimal (Single-Hub Legacy)
+#### Minimal (Single-Hub Legacy)
 
 ```yaml
 type: custom:harmony-companion-card
@@ -198,7 +204,7 @@ entity: remote.harmony_living
 config_file: /local/harmony_living.conf
 ```
 
-### Multi-Hub (v5+)
+#### Multi-Hub (v5+)
 
 ```yaml
 type: custom:harmony-companion-card
@@ -236,7 +242,7 @@ hubs:
 
 ---
 
-## 🔗 Dependencies
+### 🔗 Dependencies
 
 | Komponente | Pflicht | Zweck |
 |------------|---------|-------|
@@ -249,9 +255,9 @@ hubs:
 
 ---
 
-## 📜 Versionshistorie
+### 📜 Versionshistorie
 
-### v5.x — Multi-Hub & Smoked-Glass-Era
+#### v5.x — Multi-Hub & Smoked-Glass-Era
 
 | Version | Highlights |
 |---------|-----------|
@@ -262,7 +268,7 @@ hubs:
 | **v5.1.0** | **Multi-Hub-Support**: bis zu 5 Hubs, Hub-Bar oben mit Dropdown + Online-Status, Swipe-Geste, Editor mit Hub-Tabs |
 | **v5.0.0** | Start v5-Entwicklungslinie (Basis v4.9.1) |
 
-### v4.x — Visual-Editor-Era
+#### v4.x — Visual-Editor-Era
 
 | Version | Highlights |
 |---------|-----------|
@@ -278,7 +284,7 @@ hubs:
 | **v4.1.0** | **Resize-Funktion** für Editor-Elemente (Ecken-Handle) |
 | **v4.0.x** | **Visueller Drag-and-Drop Layout-Editor** ersetzt statische `[data-layout]`-CSS |
 
-### v3.x — TV-Display-Era
+#### v3.x — TV-Display-Era
 
 | Version | Highlights |
 |---------|-----------|
@@ -291,7 +297,7 @@ hubs:
 
 ---
 
-## 🏗️ Architektur
+### 🏗️ Architektur
 
 - **Shadow-DOM-Isolation** für Card, **Light-DOM** für Editor (HA-Selectors funktionieren nur im Light-DOM)
 - **Modulare 7-Säulen-Struktur**: SETUP, FRONTEND, LOGIC, INTEGRATION, HELPERS, REFRESH, DATA
@@ -304,7 +310,7 @@ Mehr Details: siehe [`HA-ARCHITECTURE.md`](../HA-ARCHITECTURE.md) (strikte Manda
 
 ---
 
-## 🛠️ Entwicklung
+### 🛠️ Entwicklung
 
 ```bash
 # Repo klonen
@@ -321,13 +327,13 @@ cp dist/harmony-companion-card.js /config/www/community/harmony-companion-card/
 
 ---
 
-## 📄 Lizenz
+### 📄 Lizenz
 
 MIT License — siehe [LICENSE](LICENSE)
 
 ---
 
-## 🙏 Danke
+### 🙏 Danke
 
 Wenn dir die Card im Alltag hilft → freue ich mich über einen kleinen Kaffee:
 
@@ -338,3 +344,339 @@ Wenn dir die Card im Alltag hilft → freue ich mich über einen kleinen Kaffee:
 ---
 
 *Entwickelt mit ❤️ von [al1505](https://github.com/al1505)*
+
+---
+
+## English
+
+> **Lovelace custom card for Home Assistant — digital twin of the Logitech Harmony Companion remote control**
+> With a visual drag-and-drop layout editor, multi-hub support (up to 5 hubs), smoked-glass display, EPG integration and much more.
+
+---
+
+### 📱 Harmony Card V2 — Mobile-First (new)
+
+**`harmony-card-v2.js`** — standalone, mobile-first variant for Pixel / smartphone, **runs alongside V1** (both coexist, V1 remains unchanged).
+
+| Feature | V1 | V2 |
+|---|---|---|
+| Target device | Desktop + Mobile | Mobile-first (Pixel 8 Pro) |
+| Touch targets | 32–38 px | Activity ≥48 px · D-Pad ≥60 px |
+| Device Quick Sheet | — | Control a device directly from any activity |
+| Visual editor | Drag-and-drop | — (YAML config, same schema) |
+| Multi-hub | up to 5 | 1 hub |
+| EPG / Display | Smoked glass | — |
+| Haptics | — | navigator.vibrate(30) |
+
+**Setup:** `harmony-card-v2.js` is automatically downloaded together with the HACS installation (both cards live in `dist/`). Only the resource needs to be registered manually, once:
+```yaml
+# In HA → Settings → Dashboards → Add Resources:
+# /hacsfiles/ALs-Homeassistant-Harmony-Companion-Card/harmony-card-v2.js  (JavaScript Module)
+```
+```yaml
+# In the Lovelace view:
+type: custom:harmony-card-v2
+entity: remote.harmony_hub
+config_file: /local/harmony.conf   # same conf as V1
+buttons:
+  global:
+    vol_up:    "command:::LG Fernseher:::VolumeUp"
+    vol_down:  "command:::LG Fernseher:::VolumeDown"
+    mute:      "command:::LG Fernseher:::Mute"
+    dir_up:    "command:::LG Fernseher:::DirectionUp"
+    dir_down:  "command:::LG Fernseher:::DirectionDown"
+    dir_left:  "command:::LG Fernseher:::DirectionLeft"
+    dir_right: "command:::LG Fernseher:::DirectionRight"
+    ok:        "command:::LG Fernseher:::OK"
+    back:      "command:::LG Fernseher:::Back"
+    source:    "command:::LG Fernseher:::InputHdmi1"
+  Fernsehen:
+    ch_up:   "command:::LG Fernseher:::ChannelUp"
+    ch_down: "command:::LG Fernseher:::ChannelDown"
+  CODI:
+    play:  "command:::Apple TV 4K:::Play"
+    pause: "command:::Apple TV 4K:::Pause"
+```
+
+**Device Quick Sheet:** Tap the device icon on the right of the activity bar → select a device → its configured commands appear as a sheet. Ideal for switching the TV source while a different activity is active.
+
+---
+
+### ☕ Support
+
+If you like this card and want to support its ongoing development:
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-PayPal-0070ba?logo=paypal&style=for-the-badge)](https://paypal.me/al1505)
+
+Direct link: **[paypal.me/al1505](https://paypal.me/al1505)** ❤️
+
+---
+
+### ✨ Features
+
+- 🎮 **Full activity control** via Harmony Hub (Activities, Devices, Commands)
+- 📺 **TV EPG integration** with current channel, program title, remaining time and start/end display
+- 🖼️ **Live background image** from the receiver (OpenWebIF grab image)
+- 🎨 **Visual drag-and-drop layout editor** — position everything without YAML editing
+- 📐 **Configurable display offset** (width/height via slider/input)
+- 🔌 **Multi-hub support** — up to **5 Harmony Hubs** in a single card instance
+- 👆 **Hub switching via swipe gesture** on the display or via dropdown
+- 🟢 **Live online status** per hub (green/red dot)
+- 🌫️ **Smoked-glass display** with configurable color (default `#2A2A3C`)
+- 📦 **Multi-instance panels & lines** with color, transparency, rotation, corner radius
+- 🔤 **Per-element font, size, color** for all text elements
+- ⏱️ **Instant EPG refresh** after channel change (no polling wait)
+- 🎨 **Per-hub configurable color** (border + hub bar identity)
+
+---
+
+### 📸 Screenshots
+
+<details open>
+<summary><b>🎬 1. TV mode with live EPG (ORF SPORT+ HD)</b></summary>
+
+![TV mode](screenshots/03-tv-mode1.png)
+
+Card in active TV mode: live grab image from the receiver, channel logo, channel + title with remaining time (`+52m`) and start-end display (`11:00 - 13:00`). Numpad, color buttons, D-pad and volume/channel rocker are shown.
+</details>
+
+<details>
+<summary><b>🌓 2. Idle / power off (smoked-glass display)</b></summary>
+
+![Idle](screenshots/01-idle.png)
+
+In the power-off state, the display shows the configurable smoked-glass look (default `#2A2A3C`). Panels, lines, logo and menu are completely hidden — only the power button and activity name remain.
+</details>
+
+<details>
+<summary><b>🔌 3. Multi-hub bar with dropdown</b></summary>
+
+![Multi-hub](screenshots/02-multihub.png)
+
+Multi-hub selector at the top of the card: current hub with a green online dot, left/right arrows, clicking the caret opens the list of all configured hubs (here "Hub Office" + "Hub Bedroom" — both online). Alternatively via swipe gesture on the display zone.
+</details>
+
+<details>
+<summary><b>🎨 4. Editor with per-hub borders (hub colors)</b></summary>
+
+![Editor per-hub](screenshots/04-editor-perhub.png)
+
+Editor with the hub configuration expanded: hub tabs in their respective color, per-hub bundle (TV receiver / activities / buttons / extra slots) framed in the hub color. Live preview on the right.
+</details>
+
+<details>
+<summary><b>🖼️ 5. Visual display layout editor (drag-and-drop)</b></summary>
+
+![Layout editor](screenshots/05-editor-layout.png)
+
+Full drag-and-drop layout editor: display offset inputs, smoked-glass color, element palette (Power, Menu, Panel, Line, Logo XL/L/M/S, Activity, Channel, Title, Time, Start-End), drag-and-drop grid with positioned elements, panel property editor (color / transparency / corner radius), text element editor (font size / font / color), Apply/Reset.
+</details>
+
+<details>
+<summary><b>⌨️ 6. Physical button mapping — per activity</b></summary>
+
+![Physical button mapping](screenshots/06-editor-physical-buttons-tv.png)
+
+Mapping between the **physical buttons of the card** (DVR, Guide, Info, color buttons, Exit, Menu, OK pad, Volume/Channel, Numpad) and the **commands sent by the Harmony Hub** — context-dependent based on the active activity.
+
+**Configurable:**
+- **Edit hub** — which Harmony Hub is being configured (selection under "Hub Configuration")
+- **Context (Activity)** — dropdown with three modes:
+  - `Global default mapping` — fallback when no activity-specific mapping is set
+  - `Action: Fernsehen` (TV) — mapping specific to the TV activity
+  - `Action: Kodi` — mapping specific to Kodi (or other activities)
+- **Auto-fill** — fills empty fields with matching commands from the card definition; existing entries remain untouched
+- **Media entity** *(optional)* — HA entity whose state is shown in the display area (e.g. the OpenWebIF player for TV stream/EPG)
+- **One dropdown per physical button** — selects the hub command from the `.conf` file (format: `Command (Device)`, e.g. `Red (Vu+ DVR)` or `Volume Up (Sony AVR)`)
+
+**Example TV activity:**
+
+| Card button | Command |
+|---|---|
+| Red / Green / Yellow / Blue | `Red`/`Green`/`Yellow`/`Blue` (Vu+ DVR) — EPG navigation, subtitles |
+| DVR | `Record` (Vu+ DVR) |
+| Guide | `EPG` (Vu+ DVR) |
+| Info | `Info` (Vu+ DVR) |
+| Exit / Menu | `Exit` / `Menu` (Vu+ DVR) |
+
+**Per-activity override:** the same red button sends e.g. `Red` to the Vu+ during `Fernsehen` (TV), but `Subtitles` to Kodi during `Kodi`. The global default mapping only applies when the active activity has no mapping of its own.
+</details>
+
+> 💡 **Contribute your own screenshots:** PRs welcome — drop images into the `screenshots/` folder.
+
+---
+
+### 🚀 Installation
+
+#### Via HACS (recommended)
+
+1. Click the **HACS badge** above — or manually:
+   - HACS → **Custom Repositories**
+   - URL: `https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card`
+   - Category: **Plugin**
+2. Install the card → restart HA
+3. Lovelace dashboard → **Add Card** → **ALs Homeassistant Harmony Companion Card**
+
+#### Manual
+
+1. Download `harmony-companion-card.js` from the [Latest Release](https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card/releases/latest)
+2. Copy the file to `/config/www/community/harmony-companion-card/harmony-companion-card.js`
+3. Register it as a resource in Lovelace:
+   ```yaml
+   url: /local/community/harmony-companion-card/harmony-companion-card.js
+   type: module
+   ```
+4. Add the card to the dashboard
+
+---
+
+### ⚙️ Configuration
+
+#### Minimal (single-hub legacy)
+
+```yaml
+type: custom:harmony-companion-card
+entity: remote.harmony_living
+config_file: /local/harmony_living.conf
+```
+
+#### Multi-hub (v5+)
+
+```yaml
+type: custom:harmony-companion-card
+# Global settings (all hubs)
+display_offset_w: 50
+display_offset_h: 21
+display_bg_color: "#2A2A3C"
+tv_layout:    { ... }   # created via the editor
+media_layout: { ... }
+
+# Per-hub configuration
+hubs:
+  - name: Wohnzimmer
+    entity: remote.harmony_living
+    config_file: /local/harmony_living.conf
+    color: "#03a9f4"
+    enigma2_entity: sensor.living_epg
+    enigma2_activities: [Fernsehen]
+    activity_media:
+      Fernsehen: media_player.vu_living
+    buttons:
+      global: { vol_up: 'command:::DEVICE_ID:::VolumeUp', ... }
+      Fernsehen: { ... }
+    dynamic_slots:
+      act_1: { text: TV, icon: mdi:television, action: 'activity:::Fernsehen' }
+
+  - name: Schlafzimmer
+    entity: remote.harmony_bedroom
+    config_file: /local/harmony_bedroom.conf
+    color: "#27ae60"
+    # ... own settings
+```
+
+> 💡 **Recommendation:** Configure everything via the **visual editor** instead of YAML — accessible via Dashboard → Edit Card → Configuration.
+
+---
+
+### 🔗 Dependencies
+
+| Component | Required | Purpose |
+|------------|---------|---------|
+| Home Assistant | ✅ 2024.1.0 or later | Base platform |
+| Logitech Harmony Hub | ✅ | Controls the devices |
+| HA Harmony Integration | ✅ | Connects the hub to HA (`remote.*` entities) |
+| `.conf` file per hub | ✅ | Device command list (exported from the Harmony app) |
+| [ALs Homeassistant Enigma2 EPG](https://github.com/al1505/als-enigma2-epg) | optional | EPG data (channel, title, remaining time) for Enigma2 receivers |
+| OpenWebIF | optional | Grab image + picon URL (via Enigma2 EPG) |
+
+---
+
+### 📜 Version History
+
+#### v5.x — Multi-Hub & Smoked-Glass Era
+
+| Version | Highlights |
+|---------|-----------|
+| **v5.3.2** | 🐛 Smoked-glass bugfix (removed LCD_BG override), power button with solid gray gradient |
+| **v5.3.1** | Hub banner in hub color, configurable display background, power button styling, dropdown stability fix |
+| **v5.3.0** | Smoked-glass display, idle hides panels/lines/logo/menu, editor reorder, hub colors |
+| **v5.2.0** | **Per-hub configuration**: TV receiver, activities, slots, buttons now PER hub. Display layout stays global |
+| **v5.1.0** | **Multi-hub support**: up to 5 hubs, hub bar at the top with dropdown + online status, swipe gesture, editor with hub tabs |
+| **v5.0.0** | Start of the v5 development line (based on v4.9.1) |
+
+#### v4.x — Visual Editor Era
+
+| Version | Highlights |
+|---------|-----------|
+| **v4.9.1** | EPG refresh after channel change (delayed `homeassistant.update_entity` trigger) |
+| **v4.9.0** | **Text element editor** (font size/family/color per element), stronger selection highlight, frozen-object fix |
+| **v4.8.x** | **Line element** with rotation, slider drag fix, transparency slider inverted |
+| **v4.7.0** | **Multiple panels** (`panel_1`, `panel_2`, ...) with subsequent editing |
+| **v4.6.x** | **Panel element** (background box with color/alpha/corner radius) |
+| **v4.5.x** | Configurable display offsets, burger menu element |
+| **v4.4.x** | Element size updates, +20px display offset, "Apply" button (auto-save removed) |
+| **v4.3.x** | Logo M, new default sizes, bottom/right anchoring removed — no more jumps |
+| **v4.2.0** | Time format `+109m`, new "start-end" element |
+| **v4.1.0** | **Resize function** for editor elements (corner handle) |
+| **v4.0.x** | **Visual drag-and-drop layout editor** replaces static `[data-layout]` CSS |
+
+#### v3.x — TV Display Era
+
+| Version | Highlights |
+|---------|-----------|
+| **v3.21.x** | Display height `126px !important`, Kodi media mode with title/time bottom-left |
+| **v3.20.x** | Bottom row clearance, clock suffix, transition fix |
+| **v3.19.x** | URL field + camera removed, layout refactoring |
+| **v3.10–18** | TV display, EPG integration (3 layouts), picon URL, channel color extraction, remaining-time display |
+
+> 📋 Full release notes: [GitHub Releases](https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card/releases)
+
+---
+
+### 🏗️ Architecture
+
+- **Shadow DOM isolation** for the card, **Light DOM** for the editor (HA selectors only work in the Light DOM)
+- **Modular 7-pillar structure**: SETUP, FRONTEND, LOGIC, INTEGRATION, HELPERS, REFRESH, DATA
+- **Backward compatibility**: single-hub configs without `hubs[]` are still recognized as Hub 1
+- **Immutable updates**: property editors use the spread operator → no more frozen-object errors
+- **Center-anchored coordinates**: no jumps when moving across the display center line
+- **Multi-instance pattern** (`panel_N`, `line_N`): dynamic DOM creation in `_applyDisplayLayout`
+
+More details: see [`HA-ARCHITECTURE.md`](../HA-ARCHITECTURE.md) (strict mandates), [`HA-COOKBOOK.md`](../HA-COOKBOOK.md) (setup recipes) and [`HA-RETROSPECTIVE.md`](../HA-RETROSPECTIVE.md) (lessons learned) in the workspace.
+
+---
+
+### 🛠️ Development
+
+```bash
+# Clone the repo
+git clone https://github.com/al1505/ALs-Homeassistant-Harmony-Companion-Card.git
+cd ALs-Homeassistant-Harmony-Companion-Card
+
+# Copy the file directly into HA (symlink recommended for live reload)
+cp dist/harmony-companion-card.js /config/www/community/harmony-companion-card/
+
+# Browser hard refresh (Ctrl+Shift+R) — HA caches the JS file
+```
+
+**Version tag = release**: every tag is published as a GitHub release. HACS installs both cards from the `dist/` directory of the release state.
+
+---
+
+### 📄 License
+
+MIT License — see [LICENSE](LICENSE)
+
+---
+
+### 🙏 Thanks
+
+If this card helps you in everyday use → I'd appreciate a small coffee:
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-PayPal-0070ba?logo=paypal&style=for-the-badge)](https://paypal.me/al1505)
+
+**[paypal.me/al1505](https://paypal.me/al1505)** ☕
+
+---
+
+*Developed with ❤️ by [al1505](https://github.com/al1505)*
